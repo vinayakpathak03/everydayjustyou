@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import analytics, auth, garments, internal, outfits, users, wear_logs
+from app.routers import analytics, auth, garments, internal, outfits, stylist, users, wear_logs
 from app.workers.poller import run_forever
 
 settings = get_settings()
@@ -47,4 +47,5 @@ app.include_router(garments.router, prefix="/api/v1")
 app.include_router(outfits.router, prefix="/api/v1")
 app.include_router(wear_logs.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(stylist.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")

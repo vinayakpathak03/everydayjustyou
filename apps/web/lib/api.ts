@@ -125,3 +125,58 @@ export function subscribeToGarmentEvents(onEvent: (e: GarmentStatusEvent) => voi
 
   return () => controller.abort();
 }
+
+export type ChatStreamEvent =
+  | { event: "conversation"; data: { conversation_id: string } }
+  | { event: "token"; data: { text: string } }
+  | { event: "outfit_cards"; data: { outfits: unknown[] } }
+  | { event: "done"; data: Record<string, never> };
+
+/** POSTs a chat turn and consumes the SSE reply — same fetch+ReadableStream
+ * approach as subscribeToGarmentEvents, for the same reason (Authorization
+ * header). One-shot rather than a subscription: a chat turn has a clear end
+ * (the `done` event), unlike the open-ended garment-processing stream. */
+export async function postChatMessage(
+  body: { conversation_id: string | null; message: string },
+  onEvent: (e: ChatStreamEvent) => void
+): Promise<void> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new ApiError(401, null);
+
+  const res = await fetch(`${API_BASE_URL}/api/v1/stylist/chat`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) throw new ApiError(res.status, null);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const lines = frame.split("\n");
+      const eventLine = lines.find((l) => l.startsWith("event: "));
+      const dataLine = lines.find((l) => l.startsWith("data: "));
+      if (!eventLine || !dataLine) continue;
+      const eventName = eventLine.slice("event: ".length).trim();
+      try {
+        const data = JSON.parse(dataLine.slice("data: ".length));
+        onEvent({ event: eventName, data } as ChatStreamEvent);
+      } catch {
+        // malformed frame — skip
+      }
+    }
+  }
+}

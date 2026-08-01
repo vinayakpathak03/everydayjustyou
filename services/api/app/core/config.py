@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     cron_shared_secret: str = ""
 
     gemini_api_key: str = ""
+    openweathermap_api_key: str = ""
 
     cors_origins: str = "http://localhost:3000"
 
