@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Same token values as the wireframes artifact (docs/design/ui-wireframes.md) so
+   the real app matches the reference exactly, not just approximately. */
+:root {
+  --bg: #fbf6f8;
+  --bg-elevated: #ffffff;
+  --ink: #251a22;
+  --ink-soft: #7c6874;
+  --ink-faint: #bca7b6;
+  --line: #f1dce9;
+  --accent: #e55e99;
+  --accent-soft: #fbd8e7;
+  --accent-ink: #ffffff;
+  --secondary: #cdb4da;
+  --secondary-soft: #ede1f2;
+  --tertiary: #ebb9df;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, ui-sans-serif,
+    sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "Menlo", "Consolas", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #231720;
+    --bg-elevated: #2e1f2a;
+    --ink: #f8ecf3;
+    --ink-soft: #cba6bc;
+    --ink-faint: #785e6f;
+    --line: #402c3a;
+    --accent: #ff7fb2;
+    --accent-soft: #4a2438;
+    --accent-ink: #241119;
+    --secondary: #d9c2e8;
+    --secondary-soft: #3a2c48;
+    --tertiary: #e3a8d6;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #231720;
+  --bg-elevated: #2e1f2a;
+  --ink: #f8ecf3;
+  --ink-soft: #cba6bc;
+  --ink-faint: #785e6f;
+  --line: #402c3a;
+  --accent: #ff7fb2;
+  --accent-soft: #4a2438;
+  --accent-ink: #241119;
+  --secondary: #d9c2e8;
+  --secondary-soft: #3a2c48;
+  --tertiary: #e3a8d6;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}

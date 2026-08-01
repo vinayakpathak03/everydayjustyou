@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI's Depends(...)-in-default-args is the documented, required pattern,
+# not the footgun this rule is written for.
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+disallow_untyped_defs = false
+plugins = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

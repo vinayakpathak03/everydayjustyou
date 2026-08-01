@@ -1,0 +1,15 @@
+{
+  "name": "muse",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "pnpm --filter @muse/web dev",
+    "build:web": "pnpm --filter @muse/web build",
+    "lint:web": "pnpm --filter @muse/web lint",
+    "typecheck:web": "pnpm --filter @muse/web typecheck"
+  }
+}

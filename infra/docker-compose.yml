@@ -1,0 +1,31 @@
+# Local dev database only. No Redis (see docs/tech-stack-justification.md — background
+# jobs run through a Postgres-backed table, not a queue service).
+#
+# Uses the `supabase/postgres` image (not plain `postgres`) because it ships the
+# `auth` schema helper functions (`auth.uid()`, `auth.role()`) that our RLS policies
+# depend on — see docs/architecture/database-schema.md §9. A vanilla postgres image
+# would make every RLS policy silently no-op locally.
+#
+# For a fuller local stack (Auth, Storage, Studio UI), prefer the Supabase CLI
+# (`supabase init && supabase start`) instead of this file — this compose is the
+# lightweight option for backend-only iteration against just the database.
+services:
+  db:
+    image: supabase/postgres:15.6.1.146
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      JWT_SECRET: local-dev-jwt-secret-change-me
+    ports:
+      - "54322:5432"
+    volumes:
+      - muse-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  muse-db-data:
