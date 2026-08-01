@@ -34,6 +34,10 @@ FastAPI, async, versioned under `/api/v1`. Auth via short-lived JWT (issued by S
 ├── /shopping               GET recommendations, POST dismiss/purchased
 ├── /try-on                 POST generate (V3)
 ├── /inspiration            GET aesthetic presets, POST generate-from-aesthetic
+├── /moodboards             CRUD boards
+│   └── /{id}/items          POST clip (url or upload), GET matches, DELETE
+├── /planner                GET week, PUT /{date} (assign/reassign outfit),
+│                               DELETE /{date} (unplan)
 ├── /notifications          GET, PATCH read, /settings
 ├── /integrations/calendar  connect, disconnect, status
 ├── /integrations/weather   (internal use, not user-facing directly)

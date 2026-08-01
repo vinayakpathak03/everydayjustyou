@@ -11,8 +11,8 @@ Assumes a small build team (1–2 full-stack/AI engineers + AI-assisted developm
 | 2 | Outfit Generator + basic Analytics | 6–7 | Scored outfit suggestions, wear logging |
 | 3 | AI Stylist + Smart Recommendations | 8–9 | Conversational chat, weather/calendar context |
 | 4 | Packing + Shopping Assistants | 10–11 | Trip packing lists, gap-based shopping recs |
-| 5 | Daily Notification + Fashion Inspiration + full Analytics | 12–13 | Push notifications, aesthetic presets, capsule/duplicate/rotation insights |
-| 6 | Virtual Try-On + Polish + Scale | 14–16 | Flat-lay/try-on visualization, performance hardening |
+| 5 | Daily Notification + Weekly Planner + Moodboards + Fashion Inspiration + full Analytics | 12–14 | Push notifications, week-ahead planning, inspiration clipping, aesthetic presets, capsule/duplicate/rotation insights |
+| 6 | Virtual Try-On + Polish + Scale | 15–17 | Flat-lay/try-on visualization, performance hardening |
 
 **MVP launch (usable daily) = end of Phase 2. Feature-complete against the brief = end of Phase 5.** Phase 6 is explicitly the highest-risk, lowest-certainty phase and is treated as a stretch/iterate-later phase.
 
@@ -112,30 +112,36 @@ Assumes a small build team (1–2 full-stack/AI engineers + AI-assisted developm
 
 ---
 
-## Phase 5 — Notifications, Inspiration & Full Analytics (Sprints 12–13)
+## Phase 5 — Notifications, Planner, Moodboards, Inspiration & Full Analytics (Sprints 12–14)
 
-**Sprint 12: Daily notification + full analytics**
+**Sprint 12: Daily notification + Weekly Planner**
 - Scheduled job: per-user daily outfit generation + Web Push delivery (VAPID), email fallback.
-- Analytics v2: capsule wardrobe suggestions, duplicate detection (embedding similarity), seasonal rotation nudges.
+- `outfit_plans` table + `/planner` endpoints; notification job checks for a user-set plan before generating a fresh suggestion (a planned outfit always takes precedence).
+- Weekly Planner UI (day strip, plan/reassign flow, repeat-nudge tied into novelty scoring).
 - Notification settings (time picker) in Settings.
 
-**Sprint 13: Fashion Inspiration**
+**Sprint 13: Moodboards & full analytics**
+- `moodboards`/`moodboard_items`/`inspiration_matches` tables; clip ingestion reuses the vision/embedding pipeline from Phase 1.
+- Wardrobe-match computation (embedding similarity between a clip and owned garments) + "style me like this board" hand-off into the generator/Stylist.
+- Analytics v2: capsule wardrobe suggestions, duplicate detection (embedding similarity), seasonal rotation nudges.
+
+**Sprint 14: Fashion Inspiration**
 - Aesthetic preset definitions (Old Money, Clean Girl, Minimalist, Korean Fashion, Streetwear, Quiet Luxury) as scoring-bias overlays on the generation engine.
 - Inspiration tab UI (preset grid + custom "describe a vibe" input).
 
-*Exit criteria: every feature in the original brief except Virtual Try-On is live and used daily.*
+*Exit criteria: every feature in the original brief except Virtual Try-On is live and used daily, including the Moodboard and Weekly Planner additions.*
 
 ---
 
-## Phase 6 — Virtual Try-On, Polish & Scale (Sprints 14–16)
+## Phase 6 — Virtual Try-On, Polish & Scale (Sprints 15–17)
 
-**Sprint 14: Flat-lay collage (interim try-on)**
+**Sprint 15: Flat-lay collage (interim try-on)**
 - Canvas-based compositing of background-removed items into a styled flat-lay image, cached per outfit (`collage_image_url`).
 
-**Sprint 15: Virtual Try-On (stretch)**
+**Sprint 16: Virtual Try-On (stretch)**
 - Evaluate hosted vs. self-hosted diffusion garment-transfer model (OOTDiffusion/IDM-VTON or a hosted vendor) against cost/latency/quality; ship behind a feature flag given cost uncertainty.
 
-**Sprint 16: Performance, polish, hardening**
+**Sprint 17: Performance, polish, hardening**
 - Wardrobe grid virtualization/performance pass at 500+ items.
 - Offline PWA caching pass.
 - Accessibility audit (WCAG AA).

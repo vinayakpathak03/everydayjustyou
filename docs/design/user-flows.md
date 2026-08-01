@@ -115,3 +115,32 @@ flowchart TD
     C --> D["Engine generates outfits from<br/>owned items, scored against that aesthetic"]
     D --> E["Same outfit-detail flow as Flow 3"]
 ```
+
+## 10. Moodboards & Inspiration Clipping
+
+```mermaid
+flowchart TD
+    A["Share a look into the app<br/>(share-sheet URL, screenshot, or in-app camera)"] --> B["Pick a board<br/>(existing or 'new board')"]
+    B --> C["Vision pipeline extracts description<br/>+ embedding (same as garment ingestion)"]
+    C --> D["Clip saved to board"]
+    D --> E["AI matches clip against owned garments"]
+    E --> F{"Match found?"}
+    F -->|Yes| G["'You already own something like this'<br/>— tap to see matched item(s)"]
+    F -->|No| H["Surfaced later in Shopping Assistant<br/>as a possible gap-fill reference"]
+    D --> I["'Style me like my [board name]'<br/>in Stylist chat or Outfit Generator"]
+```
+
+## 11. Weekly Planner
+
+```mermaid
+flowchart TD
+    A["Open Planner (Home or dedicated tab)"] --> B["Calendar strip, Sun-Sat,<br/>weather per day"]
+    B --> C{"Day already planned?"}
+    C -->|Yes| D["Shows planned outfit thumbnail"]
+    C -->|No| E["Tap day → generate or pick an outfit<br/>(same engine as Flow 3)"]
+    E --> F["Outfit assigned to that date<br/>(outfit_plans row created)"]
+    D --> G{"User action"}
+    G -->|Reassign| E
+    G -->|"Same outfit planned<br/>again too soon"| H["Gentle repeat-nudge,<br/>informed by novelty scoring"]
+    F --> I["Daily notification for that date<br/>reads the plan instead of generating fresh"]
+```

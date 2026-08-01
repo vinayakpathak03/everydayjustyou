@@ -31,6 +31,14 @@ erDiagram
     CHAT_CONVERSATIONS ||--o{ CHAT_MESSAGES : contains
 
     PACKING_LISTS ||--o{ PACKING_LIST_ITEMS : contains
+
+    USERS ||--o{ MOODBOARDS : curates
+    MOODBOARDS ||--o{ MOODBOARD_ITEMS : contains
+    MOODBOARD_ITEMS ||--o{ INSPIRATION_MATCHES : matched_to
+    GARMENTS ||--o{ INSPIRATION_MATCHES : matches
+
+    USERS ||--o{ OUTFIT_PLANS : schedules
+    OUTFIT_PLANS }o--|| OUTFITS : plans
 ```
 
 ## 2. Core Tables
@@ -250,6 +258,55 @@ A materialized view `garment_wear_stats` (refreshed nightly or on-write) aggrega
 | status | text | `suggested, dismissed, purchased` |
 | created_at | timestamptz | |
 
+## 6a. Moodboards & Weekly Planner
+
+### `moodboards`
+User-curated inspiration boards (PRD §6.11) — distinct from `garments` (owned items) and from AI-generated Fashion Inspiration presets (§6.10 in the PRD, no dedicated table — those are computed, not stored).
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK → users | |
+| name | text | e.g. `Party`, `Office`, `Summer`, `Bday wishes` |
+| cover_image_url | text nullable | defaults to the most recent item's image |
+| created_at / updated_at | timestamptz | |
+
+### `moodboard_items`
+The individual saved clips.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| moodboard_id | uuid FK → moodboards | |
+| source_url | text nullable | original web/share-sheet URL, if any |
+| storage_url | text | the saved image, in object storage |
+| ai_description | text nullable | same vision-extraction pipeline as garments (§5.1), for search/matching |
+| embedding | vector(512) nullable | image embedding, for matching against owned garments |
+| sort_order | smallint | |
+| created_at | timestamptz | |
+
+### `inspiration_matches`
+Precomputed "you already own something like this" links, refreshed when a new moodboard item is saved or a new garment is added.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| moodboard_item_id | uuid FK | |
+| garment_id | uuid FK | |
+| similarity | numeric(4,3) | cosine similarity between embeddings |
+| created_at | timestamptz | |
+
+### `outfit_plans`
+Backbone of the Weekly Planner (PRD §6.12) — a *prospective* assignment of an outfit to a future date, as opposed to `wear_logs` which is a *retrospective* record of what was actually worn.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK → users | |
+| outfit_id | uuid FK → outfits | |
+| planned_date | date | |
+| status | text | `planned, worn, skipped` — transitions to `worn` writes a corresponding `wear_logs` row |
+| source | text | `user, daily_notification` — who created the plan |
+| created_at / updated_at | timestamptz | |
+
+Unique `(user_id, planned_date)` if only one planned outfit per day is allowed for V1 (simplest); relax to a composite key with a `slot`/`time_of_day` column later if multiple outfits per day (e.g., day look + evening look) become a requirement. The Daily Outfit Notification (§5.6 in system-architecture.md) checks `outfit_plans` for the day before generating a fresh suggestion, so a user-planned outfit always takes precedence.
+
 ## 7. Notifications & Integrations
 
 ### `notifications`
@@ -289,3 +346,4 @@ Unique `(location_key, date)`, short TTL eviction.
 - **All AI-derived fields are user-overridable** — no attribute is read-only; corrections should ideally be captured (V2: a `garment_attribute_corrections` audit table) to enable future prompt/model tuning, but is not required for V1.
 - **`user_id` scoping everywhere** from day one, even though V1 targets a single household — this is what keeps multi-tenancy additive later rather than a migration.
 - **jsonb over rigid columns** for evolving/optional structured data (`context`, `score_breakdown`, `ai_confidence`) keeps the schema stable while the AI layer iterates.
+- **`moodboard_items` vs. `garments`** are deliberately separate tables even though both run through the same vision/embedding pipeline — a moodboard item is a *reference the user doesn't own*, and conflating it with owned inventory would corrupt every feature that assumes `garments` = "things in the closet" (Outfit Generator, Analytics, Shopping gap detection).

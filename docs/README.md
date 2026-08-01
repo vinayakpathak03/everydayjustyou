@@ -10,7 +10,7 @@ Full architecture and planning set for the AI-powered digital wardrobe assistant
 4. **[architecture/api-architecture.md](./architecture/api-architecture.md)** — FastAPI router map, key endpoint contracts, internal service boundaries, streaming/real-time, auth.
 5. **[architecture/folder-structure.md](./architecture/folder-structure.md)** — Monorepo layout for the web app, API, AI worker, and shared packages.
 6. **[design/user-flows.md](./design/user-flows.md)** — Mermaid flowcharts for the 9 core user journeys (onboarding, add-item, outfit generation, Stylist chat, daily notification, packing, analytics, shopping, inspiration).
-7. **[design/ui-wireframes.md](./design/ui-wireframes.md)** — Screen-by-screen wireframe descriptions and design language. Companion visual artifact (lo-fi mockups of all 11 core screens) was published separately in the chat session.
+7. **[design/ui-wireframes.md](./design/ui-wireframes.md)** — Screen-by-screen wireframe descriptions and design language (Barbie-land palette). Companion visual artifact (lo-fi mockups of all 13 core screens) was published separately in the chat session.
 8. **[roadmap/roadmap-and-sprints.md](./roadmap/roadmap-and-sprints.md)** — 7-phase roadmap, sprint-by-sprint breakdown, MVP vs. feature-complete milestones, team allocation.
 9. **[tech-stack-justification.md](./tech-stack-justification.md)** — Every technology choice with the tradeoff made explicit, and what was deliberately *not* chosen.
 

@@ -135,6 +135,18 @@ The product must *feel* like it was made by Apple — restrained UI, generous wh
 ### 6.10 Fashion Inspiration
 - Preset aesthetic profiles (Old Money, Clean Girl, Minimalist, Korean Fashion, Streetwear, Quiet Luxury, + user-defined) act as a scoring/style prompt overlay on the Outfit Generator — "give me an outfit from my closet that leans Quiet Luxury."
 
+### 6.11 Moodboards & Inspiration Clipping (new)
+- As a user, I can save any outfit/look I find inspiring — from the web, a screenshot, a Pinterest-style share, or a photo of a friend — into named boards ("Party", "Office", "Summer", "Bday wishes").
+- As a user, each saved clip can be AI-matched against my own wardrobe: "You already own something like the boots in this photo" / "3 items in your closet would recreate 70% of this look."
+- Boards are a distinct surface from AI-generated Fashion Inspiration (6.10) — 6.10 is AI-generated *from your closet*; 6.11 is *user-curated reference material* the AI can draw on when generating (e.g., "style me like my Party board tonight").
+- Ingestion: paste a URL/share-sheet share, or upload a screenshot — the same vision pipeline (§5.1 in system-architecture.md) extracts a description + embedding from the clip so it's searchable and matchable, exactly like a garment, but stored as `inspiration_items` rather than `garments` (it's a reference image, not an owned item).
+
+### 6.12 Weekly Planner (new)
+- As a user, I can see my week as a calendar strip (Sun–Sat) and assign a planned outfit to specific upcoming days — not just "today," a real look-ahead view.
+- Each day shows weather + a thumbnail of the planned outfit (or a prompt to plan one) at a glance.
+- Distinct from the Daily Outfit Notification (6.9), which is a single-day AI push; the Weekly Planner is the user-driven, editable calendar surface that the notification and Smart Recommendations both read from and write into — planning Tuesday's outfit on Sunday should mean Tuesday's notification reflects that choice rather than generating a fresh one.
+- Drag/tap to reassign an outfit to a different day; conflicts (same outfit planned twice in a short window) get a gentle "you're repeating this soon" nudge, tying into Closet Analytics' novelty scoring (6.2).
+
 ## 7. Non-Functional Requirements
 
 - **Mobile-first**: primary usage is a phone, one-handed, often while getting dressed. Design for thumb reach, camera-first flows.
@@ -153,6 +165,20 @@ The product must *feel* like it was made by Apple — restrained UI, generous wh
 4. **Typography-led hierarchy.** A single confident type family (system font stack: SF Pro on Apple devices, Inter fallback), generous line-height, no more than 2 weights per screen.
 5. **Neutral canvas, color pops from the clothes.** Backgrounds are near-white/near-black (light/dark mode); the wardrobe's own colors provide visual richness.
 6. **Native-feeling gestures.** Swipe to like/skip an outfit suggestion (Tinder-for-outfits pattern), long-press for quick actions, haptics on supported devices.
+
+### 8.1 Visual Identity — Palette
+
+Principle 5 ("neutral canvas, color pops from the clothes") holds; the *color* of that canvas and accents is now specified as a **Barbie-land-inspired palette** rather than the neutral sage/camel direction sketched earlier, giving the product a warmer, more playful "cute & girly" register while keeping the same restrained, one-accent-at-a-time layout discipline:
+
+| Token | Hex | Use |
+|---|---|---|
+| Lilac | `#CDB4DA` | secondary accent — chips, secondary CTAs, planner highlights |
+| Blush | `#FFC8DC` | tint backgrounds, low-emphasis surfaces |
+| Pink | `#FFAFCC` | garment-card placeholder tint, board covers |
+| Magenta | `#E55E99` | primary accent — score badges, primary CTA, active states |
+| Orchid | `#EBB9DF` | tertiary tint, hover/pressed states |
+
+Canvas stays near-white (warm, faintly pink-tinted) in light mode and near-black (warm, faintly plum-tinted) in dark mode — the palette above is for accents and small surfaces, not for flooding the background, so the clothing photography still reads as the richest color on any screen. See the wireframes artifact for the palette applied to real UI.
 
 ## 9. Risks & Assumptions
 
