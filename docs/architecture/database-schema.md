@@ -1,6 +1,8 @@
 # Database Schema
 
-PostgreSQL 15+, with the `pgvector` and `pgcrypto` (for `gen_random_uuid()`) extensions enabled. All primary keys are UUIDs. All tables carry `created_at`/`updated_at` timestamps (`timestamptz`) unless noted.
+PostgreSQL 15+ (Supabase free tier), with the `pgvector` and `pgcrypto` (for `gen_random_uuid()`) extensions enabled. All primary keys are UUIDs. All tables carry `created_at`/`updated_at` timestamps (`timestamptz`) unless noted.
+
+**This is a multi-user, invite-only product** (developer + a handful of family members, not a single household) with hard per-user data isolation — every user-scoped table below carries `user_id` and has Row-Level Security enabled; see §9 for the enforcement pattern. This is non-negotiable and built in from the first migration, not retrofitted.
 
 ## 1. Entity-Relationship Diagram
 
@@ -39,6 +41,9 @@ erDiagram
 
     USERS ||--o{ OUTFIT_PLANS : schedules
     OUTFIT_PLANS }o--|| OUTFITS : plans
+
+    USERS ||--o{ INVITES : issues
+    USERS ||--o{ PROCESSING_JOBS : owns
 ```
 
 ## 2. Core Tables
@@ -55,7 +60,24 @@ erDiagram
 | notification_time | time | user's preferred daily-outfit push time |
 | location | jsonb | `{lat, lng, city}` cached for weather lookups |
 | onboarding_completed_at | timestamptz nullable | |
+| consent_dev_photo_access | boolean not null default `true` | developer may receive a copy of uploaded photos for debugging; pre-checked at signup, toggle lives on the same screen as the T&C (not routed around it), revocable any time in Settings |
+| tc_version | text nullable | version/hash of the T&C text the user accepted, so a future rewrite can detect who's on stale consent |
+| tc_accepted_at | timestamptz nullable | required before `onboarding_completed_at` can be set |
+| invited_by | uuid nullable, FK → users | who invited this account, for the invite-only signup trail |
 | created_at / updated_at | timestamptz | |
+
+### `invites`
+Backs invite-only signup — there is no public registration route. The developer creates a row here (or directly provisions the Supabase Auth user) per person they're inviting.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| email | text | the invited person's email |
+| invited_by | uuid FK → users | |
+| token | text unique | included in the signup link sent out-of-band (e.g. a text message) |
+| status | text | `pending, accepted, revoked` |
+| accepted_by | uuid nullable, FK → users | set once the invite is redeemed |
+| expires_at | timestamptz nullable | |
+| created_at | timestamptz | |
 
 ### `style_profiles`
 One-to-one with `users`. Recomputed periodically from analytics + explicit prefs, injected into AI Stylist system context.
@@ -105,12 +127,18 @@ The core catalog item.
 | acquisition_type | text nullable | `new, pre_loved, rental, handmade, gifted, undefined` — powers the Wardrobe Composition chart (PRD §6.15) |
 | is_favorite | boolean default false | |
 | is_archived | boolean default false | soft-hide from active wardrobe without deleting |
-| ai_description | text | generated natural-language description (embedding source) |
-| ai_confidence | jsonb | per-attribute confidence scores from the vision worker |
+| ai_description | text nullable | generated natural-language description (embedding source); null for manual entries |
+| ai_confidence | jsonb nullable | per-attribute confidence scores from the vision worker; null for manual entries |
 | status | text | `processing, needs_review, ready` |
+| entry_mode | text not null default `ai_photo` | `ai_photo` (goes through §5.1's rembg+Gemini pipeline) or `manual` (sensitive-category path — never sent to any AI provider) |
+| sensitive_category | boolean not null default `false` | auto-set true for underwear/lingerie/similar categories, user-togglable either direction. When true: `entry_mode` must be `manual`, no image is ever sent to Gemini, and any stored photo is excluded from outfit-generation candidate retrieval, shared/social views, and the dev-photo-access pipeline **regardless of `users.consent_dev_photo_access`** — this exclusion overrides that consent setting, not the reverse |
+| manual_description | text nullable | free-text description, required when `entry_mode = manual` (e.g. "5 pairs black cotton briefs") |
+| manual_quantity | int nullable | for manual entries logged as a count rather than individual items |
 | created_at / updated_at | timestamptz | |
 
 Indexes: `(user_id, category)`, `(user_id, is_archived)`, GIN on `season`, `occasion`, `secondary_colors`.
+
+Application-level check: a row with `sensitive_category = true` must have `entry_mode = 'manual'` — enforced in the service layer (and ideally a Postgres `CHECK` constraint) so a sensitive item can never accidentally enter the AI pipeline via a code path that skips the app-level guard.
 
 ### `garment_images`
 Multiple photos per item.
@@ -137,6 +165,21 @@ Multiple photos per item.
 | created_at | timestamptz | |
 
 Index: `hnsw (embedding vector_cosine_ops)`.
+
+### `processing_jobs`
+The background job queue — a plain Postgres table polled by an in-process `asyncio` worker loop in the FastAPI service, replacing Redis/Celery/RQ (see [system-architecture.md §5.6](../architecture/system-architecture.md), driven by the $0 hosting budget: no durable free Redis tier on Render/Railway, and a second always-on worker service doesn't fit a free-tier-only plan).
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK → users | |
+| type | text | `process_image, generate_embedding, daily_notification, ...` |
+| payload | jsonb | job-specific input, e.g. `{garment_image_id}` |
+| status | text | `pending, running, done, failed` |
+| attempts | smallint default 0 | for basic retry-with-backoff on transient failures (e.g. a Gemini rate-limit response) |
+| error | text nullable | last failure reason, if any |
+| created_at / updated_at | timestamptz | |
+
+Indexed on `(status, created_at)` for efficient polling (`WHERE status = 'pending' ORDER BY created_at LIMIT N`). Rows are cheap to leave around after completion (no separate cleanup job needed at this volume) but a periodic delete of old `done` rows keeps the table small.
 
 ### `tags` / `garment_tags`
 Freeform user tags (many-to-many), distinct from AI-structured attributes.
@@ -348,6 +391,43 @@ Unique `(location_key, date)`, short TTL eviction.
 
 - **Soft deletes** via `is_archived`/`status` fields rather than hard deletes on `garments`, so analytics/history stay intact; a separate hard-delete (GDPR-style data export/delete) is a distinct admin operation, not the everyday "remove from closet" action.
 - **All AI-derived fields are user-overridable** — no attribute is read-only; corrections should ideally be captured (V2: a `garment_attribute_corrections` audit table) to enable future prompt/model tuning, but is not required for V1.
-- **`user_id` scoping everywhere** from day one, even though V1 targets a single household — this is what keeps multi-tenancy additive later rather than a migration.
+- **`user_id` scoping everywhere**, enforced at the database layer via Row-Level Security (§9), not just app-level filtering — this product is multi-user (invite-only) from day one, not a single household with multi-tenancy deferred.
 - **jsonb over rigid columns** for evolving/optional structured data (`context`, `score_breakdown`, `ai_confidence`) keeps the schema stable while the AI layer iterates.
 - **`moodboard_items` vs. `garments`** are deliberately separate tables even though both run through the same vision/embedding pipeline — a moodboard item is a *reference the user doesn't own*, and conflating it with owned inventory would corrupt every feature that assumes `garments` = "things in the closet" (Outfit Generator, Analytics, Shopping gap detection).
+
+## 9. Row-Level Security (multi-user isolation — non-negotiable)
+
+Every table above that carries `user_id` (`garments`, `outfits`, `wear_logs`, `chat_conversations`, `moodboards`, `packing_lists`, `shopping_recommendations`, `outfit_plans`, `notifications`, `style_profiles`, etc. — everything except lookup tables like `brands`/`tags`) has RLS **enabled**, with a policy of this shape:
+
+```sql
+alter table garments enable row level security;
+
+create policy "garments_owner_select" on garments
+  for select using (auth.uid() = user_id);
+
+create policy "garments_owner_insert" on garments
+  for insert with check (auth.uid() = user_id);
+
+create policy "garments_owner_update" on garments
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "garments_owner_delete" on garments
+  for delete using (auth.uid() = user_id);
+```
+
+(`auth.uid()` is Supabase's helper reading the `sub` claim off the current Postgres session's JWT-derived context — the same mechanism Supabase's own client libraries rely on.)
+
+**Why this matters for how FastAPI connects to Postgres:** the easy-but-wrong integration pattern is for the backend to hold a single connection using Supabase's `service_role` key, which **bypasses RLS by design** (it's meant for trusted server-side admin operations) — if FastAPI used that key for ordinary user requests, every RLS policy above would be inert and isolation would fall back to whatever `WHERE user_id = ...` clauses the app happens to remember to write, which is exactly the "even by accident" failure mode this product must not have. Instead:
+
+- Each authenticated request gets a Postgres session/transaction with the requesting user's id set as a local claim (`select set_config('request.jwt.claim.sub', :user_id, true)`, or equivalent via a connection-pooled role that maps the validated JWT), so `auth.uid()` resolves correctly and RLS applies exactly as it would through Supabase's own APIs.
+- The `service_role` key is reserved for a short, explicit list of genuinely cross-user admin operations (e.g. the invite-acceptance flow that needs to look up an `invites` row before the invitee's own account/session exists) — never for routine per-user reads/writes.
+- This is verified with a test that asserts a second user's authenticated session cannot read/write another user's rows even when the query has no `WHERE user_id` clause at all — the database, not the query, is the isolation boundary.
+
+## 10. Storage Bucket Policies (explicit setup step, not a default)
+
+Supabase Storage buckets are **not** left at default settings — this is called out explicitly because a misconfigured public bucket is one of the most common and most damaging mistakes at this stage:
+
+- Every bucket (`garment-images`, `moodboard-images`, etc.) is created **private**, never "public."
+- Objects are stored under a per-user path prefix (`{bucket}/{user_id}/{garment_id}/{filename}`), and Storage RLS policies on `storage.objects` restrict access to `auth.uid()::text = (storage.foldername(name))[1]` (i.e., the first path segment must match the requesting user) for select/insert/update/delete.
+- Signed URLs (short-lived) are used for any client-side image display rather than making objects public — the frontend never constructs a raw public storage URL.
+- Verifying bucket visibility and the per-user policy is a required Phase 0 setup step (see roadmap-and-sprints.md), checked manually against the Supabase dashboard before any real user photo is uploaded, not assumed from the bucket-creation defaults.

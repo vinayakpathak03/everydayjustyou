@@ -4,6 +4,12 @@ Low-fidelity wireframes for the core screens are published as an interactive vis
 
 Design language: near-white/near-black neutral canvas, one accent used sparingly, system font stack (SF Pro / Inter), generous 16–24px spacing rhythm, large rounded corners (16–20px) on cards, soft shadows, garment photography (background-removed) as the dominant visual element on every screen it appears. Accent palette is the **Barbie-land** direction from PRD §8.1 — lilac `#CDB4DA`, blush `#FFC8DC`, pink `#FFAFCC`, magenta `#E55E99`, orchid `#EBB9DF` — used the same way the earlier sage/camel accents were: sparingly, on badges, chips, and primary actions, never flooding a background.
 
+## 0. Onboarding — Invite, T&C & Consent (new)
+- Reached only via an invite link (token) — there is no public "Sign up" screen or link to one anywhere in the app.
+- Account step: Supabase Auth email/password or Google/Apple, minimal chrome.
+- **T&C + Consent screen — the one screen in this whole spec required to be un-skippable and not gestured around:** scrollable T&C text (developer's own copy — content owned outside this spec, see PRD §7.1) with the **developer photo-access toggle physically embedded partway down the same screen**, not on a separate settings page — default **ON** (pre-checked), clearly labeled, with a one-line plain-language explanation next to it. Below the T&C text, a short highlighted callout (not buried in dense paragraph text) restates the two things people are least likely to read carefully otherwise: (a) photos are sent to Google's Gemini API for analysis, and on the free tier Google may use them to improve its models; (b) please don't upload underwear/lingerie photos — use the manual entry option (screen 3a) for those instead. A single "I agree" primary button at the bottom is disabled until the user has scrolled through the text (standard iOS pattern for meaningful consent, not just a checkbox of convenience).
+- Only after this screen: quick profile (sizes, style leanings, location), then batch capture (screen 3).
+
 ## 1. Home ("Today")
 - Greeting + date + weather chip, top-left, minimal.
 - Hero: today's top outfit suggestion as a large card (collage of items), with score badge and one-line rationale.
@@ -20,10 +26,17 @@ Design language: near-white/near-black neutral canvas, one accent used sparingly
 - Floating "+" action button (camera-first) bottom-right, thumb reach zone.
 
 ## 3. Add Item Flow
+- Category picker is the first step, not the camera — this is what lets a sensitive category route to 3a instead of the camera flow below.
 - Full-screen camera view by default; gallery picker as secondary option.
 - After capture: instant card with a subtle shimmer/skeleton state labeled "Working on it..."
 - Multi-photo: horizontal thumbnail strip under the primary photo, "+add another angle".
 - Review sheet slides up from bottom (iOS-sheet style): attribute fields as tappable chips/pickers, pre-filled and highlighted if AI confidence is low (so the user knows what's worth double-checking) — never a blocking red "error," just a soft affordance to review. Acquisition type (new/pre-loved/rental/handmade/gifted) is an optional chip here, feeding §6.15's composition analytics.
+
+## 3a. Add Item — Sensitive Category (manual entry, new)
+- Reached when the category picker's selection is auto-flagged sensitive (underwear, lingerie, similar), or the user manually toggles "mark as sensitive" on any category.
+- No camera-first prompt here — the screen opens straight to a plain form: description (text), quantity (stepper), category, color (optional swatch picker). A small note explains why: "Skipping AI tagging for this one — see [why]."
+- Photo is explicitly optional, framed as "not required," with a one-line reminder if the user does attach one: "This photo stays local to your account — it's never sent to Google's AI, and it won't appear in outfit suggestions."
+- Saved items appear in the Wardrobe grid like any other (for record-keeping/quantity tracking) but never surface in Outfit Generator results, Canvas, Dress Me, or Moodboard matching — there's no toggle to change that from the item's own detail screen, since the exclusion isn't a per-screen preference.
 
 ## 4. Item Detail
 - Full-bleed hero image, swipeable through all photos for that item.
@@ -88,5 +101,5 @@ Design language: near-white/near-black neutral canvas, one accent used sparingly
 - Notification time picker (daily outfit push).
 - Style profile (sizes, preferred colors/aesthetics, dislikes).
 - Calendar connection toggle.
-- Privacy & data (export, delete account) — surfaced clearly, not buried, given how personal this data is.
+- Privacy & data section: developer photo-access toggle (same setting as onboarding screen 0, revocable here at any time — full T&C text stays linked/re-readable, not just the toggle), export data, delete account — surfaced clearly, not buried, given how personal this data is.
 - Private-circle sharing controls, if that USP candidate (PRD §10) gets greenlit — off by default.

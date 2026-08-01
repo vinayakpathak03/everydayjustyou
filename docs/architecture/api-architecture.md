@@ -1,6 +1,6 @@
 # API Architecture
 
-FastAPI, async, versioned under `/api/v1`. Auth via short-lived JWT (issued by Supabase Auth/Clerk) validated on every request via a dependency; refresh handled client-side by the auth provider's SDK.
+FastAPI, async, versioned under `/api/v1`, shipped as a **single deployable service** (no separate worker process — see [system-architecture.md §3](./system-architecture.md)) on Render/Railway free tier. Auth via short-lived JWT issued by **Supabase Auth** (invite-only signup, no public registration route), validated on every request via a dependency; refresh handled client-side by the Supabase SDK.
 
 ## 1. Conventions
 
@@ -16,11 +16,15 @@ FastAPI, async, versioned under `/api/v1`. Auth via short-lived JWT (issued by S
 
 ```
 /api/v1
-├── /auth                 (session bootstrap, webhook from auth provider)
+├── /auth                 (session bootstrap, webhook from Supabase Auth)
+│   └── /invites            POST create (dev-only), GET validate token, POST accept
 ├── /users/me              GET, PATCH profile + preferences
+│   └── /consent             GET, PUT consent_dev_photo_access + tc acceptance (onboarding screen, §PRD 7)
 ├── /style-profile         GET, PATCH
 ├── /garments               CRUD + search/filter
-│   └── /{id}/images         upload, list, delete, reorder
+│   └── /{id}/images         upload, list, delete, reorder (ai_photo entry_mode only)
+│   └── /manual              POST — sensitive-category manual entry (6): description + quantity,
+│                               photo optional, never touches rembg or Gemini (§system-architecture.md §6)
 ├── /outfits                CRUD, generate, favorite
 │   └── /generate            POST — the Outfit Generator (6.2/6.3 in PRD)
 │   └── /{id}/alternatives   POST — swap one slot, re-score
@@ -45,7 +49,11 @@ FastAPI, async, versioned under `/api/v1`. Auth via short-lived JWT (issued by S
 ├── /notifications          GET, PATCH read, /settings
 ├── /integrations/calendar  connect, disconnect, status
 ├── /integrations/weather   (internal use, not user-facing directly)
-└── /admin (internal)       health, model/version info, cost dashboards
+├── /internal/cron          POST endpoints pinged by the GitHub Actions
+│                               schedule: workflow (daily-notifications,
+│                               seasonal-rotation) — see system-architecture.md §4;
+│                               shared-secret header auth, not user JWT
+└── /admin (internal)       health, model/version info, Gemini free-tier quota usage
 ```
 
 ## 3. Key Endpoints — Contracts
@@ -155,7 +163,7 @@ services/         → domain logic (OutfitService, GarmentService, StylistServic
 repositories/     → DB access (SQLAlchemy/SQLModel queries), one per aggregate
 ai/               → AIClient abstraction (chat, vision, embeddings) + prompt templates
 integrations/     → WeatherClient, CalendarClient, StorageClient, PushClient
-workers/          → job definitions consumed by the queue (separate deployable, imports from services/)
+workers/          → job handlers consumed by the in-process asyncio poller (same deployable, imports from services/ — see system-architecture.md §3 for why there's no separate worker service)
 ```
 
 Routers never talk to the database or AI providers directly — every call goes through a `service`, which is what makes `workers/` able to reuse the exact same `GarmentService.apply_extracted_attributes(...)` logic the API would use, avoiding logic duplication between the sync API and async workers.
@@ -168,16 +176,18 @@ Routers never talk to the database or AI providers directly — every call goes 
 
 ## 6. AuthN/AuthZ
 
-- Authentication delegated to Supabase Auth (or Clerk) — handles email/password, OAuth (Google/Apple), and session/JWT issuance. FastAPI validates the JWT signature/claims on each request via a dependency (`get_current_user`).
-- Authorization is simple row-level ownership (`resource.user_id == current_user.id`) enforced in the repository layer for V1 (single-user-owns-their-data model); the schema's `user_id` scoping makes a future household/shared-closet role model additive.
+- **Authentication** delegated to Supabase Auth — handles OAuth/email sign-in and session/JWT issuance, but **signup is invite-only**: there is no public registration endpoint. An account is created only via the `/auth/invites` flow (developer issues an invite → invitee redeems the token → Supabase Auth user is created). FastAPI validates the JWT signature/claims on each request via a dependency (`get_current_user`).
+- **Authorization is enforced twice, deliberately redundant:** the repository layer still checks `resource.user_id == current_user.id` (defense in depth, and it's what makes queries readable), but the **real** isolation boundary is Postgres Row-Level Security (see [database-schema.md §9](./database-schema.md)). This means FastAPI's DB connection for ordinary requests carries the authenticated user's identity as a session-local JWT claim rather than using the Supabase `service_role` key — the service-role key bypasses RLS by design and is reserved for the small, explicit set of admin operations that must legitimately cross user boundaries (e.g. resolving an invite token before the invitee has a session). Getting this wrong (using `service_role` broadly "to keep queries simple") would silently turn off the actual isolation guarantee, so it's called out here as a hard rule, not a style preference.
+- **Onboarding gate:** a new account cannot reach the wardrobe until `users.tc_accepted_at` is set and `users.consent_dev_photo_access` has been explicitly presented (default on) on the combined T&C+consent screen — enforced both client-side (routing) and server-side (`onboarding_completed_at` stays null, most endpoints 403 until it's set).
 - Secrets (calendar OAuth tokens) encrypted at rest (e.g., via `pgcrypto` or an app-level envelope encryption key from a secrets manager).
 
 ## 7. External Integration Clients
 
 | Client | Wraps | Notes |
 |---|---|---|
-| `AIClient` | OpenAI (primary), pluggable for Anthropic | chat completion w/ tools, vision extraction, embeddings — single retry/timeout/cost-logging wrapper |
-| `StorageClient` | S3/R2/Supabase Storage | signed upload URLs, resize-on-read via CDN |
-| `WeatherClient` | OpenWeatherMap | cached in `weather_cache` |
+| `AIClient` | Gemini API (free tier) | chat completion w/ tools, vision extraction, embeddings — single retry/timeout/rate-limit/quota-logging wrapper; sensitive-category items never reach this client at all (§system-architecture.md §6) |
+| `StorageClient` | Supabase Storage | signed upload URLs (private buckets, per-user path policies — see database-schema.md §10), resize-on-read |
+| `WeatherClient` | OpenWeatherMap (free tier) | cached in `weather_cache` |
 | `CalendarClient` | Google Calendar | read-only scope, token refresh handled here |
-| `PushClient` | Web Push (VAPID) | falls back to email via a transactional email provider (e.g., Resend) if push isn't subscribed |
+| `PushClient` | Web Push (VAPID) | falls back to email via Resend's free tier if push isn't subscribed |
+| `JobQueue` | `processing_jobs` Postgres table | insert/poll/mark-complete — no Redis; consumed by the in-process `asyncio` worker loop started at app startup, not a separate deployable |

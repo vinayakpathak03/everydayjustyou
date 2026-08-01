@@ -63,27 +63,27 @@ muse/
 │   │   │   ├── repositories/         # SQLAlchemy/SQLModel data access
 │   │   │   ├── models/               # ORM models
 │   │   │   ├── schemas/              # Pydantic request/response models
-│   │   │   ├── ai/                   # AIClient, prompt templates, tool definitions
+│   │   │   ├── ai/                   # AIClient (Gemini), prompt templates, tool definitions
 │   │   │   ├── integrations/         # WeatherClient, CalendarClient, StorageClient, PushClient
+│   │   │   ├── workers/              # job handlers, run in-process (no separate worker service — $0 budget, see system-architecture.md §3)
+│   │   │   │   ├── jobs/
+│   │   │   │   │   ├── remove_background.py      # rembg, self-hosted
+│   │   │   │   │   ├── extract_attributes.py      # Gemini vision call
+│   │   │   │   │   ├── generate_embeddings.py     # CLIP (self-hosted) + Gemini text embeddings
+│   │   │   │   │   ├── render_outfit_collage.py
+│   │   │   │   │   └── generate_try_on.py         # V3
+│   │   │   │   ├── models/                        # local ML models (rembg, CLIP weights)
+│   │   │   │   └── poller.py                       # asyncio loop polling processing_jobs, started at app startup
 │   │   │   ├── core/                 # config, security/auth deps, logging, exceptions
 │   │   │   └── db/                   # session, migrations entrypoint
 │   │   ├── alembic/                  # DB migrations
 │   │   ├── tests/
 │   │   └── pyproject.toml
 │   │
-│   └── ai-worker/                    # Async worker service (Redis/RQ or Celery consumer)
-│       ├── worker/
-│       │   ├── jobs/
-│       │   │   ├── remove_background.py
-│       │   │   ├── extract_attributes.py
-│       │   │   ├── generate_embeddings.py
-│       │   │   ├── render_outfit_collage.py
-│       │   │   ├── generate_try_on.py        # V3
-│       │   │   └── send_daily_notifications.py
-│       │   ├── models/                        # local ML models (rembg, CLIP) or client wrappers
-│       │   └── scheduler.py                    # cron-triggered jobs
-│       ├── tests/
-│       └── pyproject.toml
+│   └── (no separate worker service — see system-architecture.md §3 for why: a second
+│        always-on process doesn't fit a $0/free-tier-only hosting plan; internal/cron
+│        endpoints in routers/ are what the GitHub Actions schedule: workflow pings for
+│        daily notifications/seasonal-rotation, see api-architecture.md)
 │
 ├── packages/
 │   ├── ui/                           # shared design-system components (if/when a native app is added)
@@ -91,11 +91,10 @@ muse/
 │   └── config/                       # shared eslint/tsconfig/tailwind/prettier config
 │
 ├── infra/
-│   ├── docker-compose.yml            # local dev: postgres+pgvector, redis, minio (S3-compatible)
+│   ├── docker-compose.yml            # local dev: postgres+pgvector, minio (S3-compatible) — no redis
 │   ├── docker/
-│   │   ├── api.Dockerfile
-│   │   └── worker.Dockerfile
-│   └── terraform/                    # (post-MVP) IaC for prod infra if migrating off PaaS
+│   │   └── api.Dockerfile            # single image, API + in-process job poller
+│   └── terraform/                    # (post-MVP) IaC only if migrating off free-tier PaaS
 │
 ├── docs/                             # this documentation set
 ├── .github/
@@ -107,6 +106,6 @@ muse/
 
 ## Notes
 
-- **`services/api` vs `services/ai-worker`** are two independently deployable processes sharing the same Python package structure conventions but *not* the same runtime — the worker is CPU/GPU-bound and scales on queue depth, the API is I/O-bound and scales on request concurrency. They can still share a `services/api/app/services` import if useful (worker jobs call the same service-layer functions the API uses), achieved by packaging `app` as an installable local package rather than duplicating logic.
+- **`services/api/app/workers`** runs in-process, not as a separate deployable — the job handlers call the exact same `services/` functions the HTTP routers use (e.g. `GarmentService.apply_extracted_attributes(...)`), so there's no logic duplication between the request path and the background-job path, and only one process to keep inside the free-tier hosting budget. If job volume ever outgrows this, the exit ramp is to promote `workers/` into its own deployable behind the same `processing_jobs` table interface — an infra change, not a rewrite.
 - **`packages/types`** is generated (not hand-written) from the FastAPI OpenAPI spec on each API change (`openapi-typescript`), so the frontend never drifts from the backend contract.
 - **No `apps/mobile` in V1** — the PWA is mobile-first and installable; a React Native/Expo app is a V3+ addition and would land under `apps/mobile`, reusing `packages/types` and `packages/ui` tokens.

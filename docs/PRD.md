@@ -14,6 +14,20 @@ Give someone a digital twin of their entire closet, photographed once, and then 
 
 The product must *feel* like it was made by Apple — restrained UI, generous whitespace, editorial photography of the clothes themselves as the hero content, fast, quiet, and confident. No clutter, no dashboards-for-dashboards'-sake.
 
+## 1a. Technical Constraints (Locked)
+
+Decided after working through the platform/cost tradeoffs — treated as fixed for the rest of this document, not re-derived per feature. Full reasoning in [tech-stack-justification.md](./tech-stack-justification.md); this is the summary that everything else in this PRD must fit inside.
+
+- **Budget: $0, hard constraint.** Every service below is a genuine free tier, not "cheap." If a feature (§6) seems to need a paid service, the spec calls out the free-tier-compatible substitute instead of quietly assuming a budget.
+- **Frontend:** Next.js, shipped as a PWA (installable via Add to Home Screen — no App Store, no Apple Developer account, no Mac required; dev machine is Windows). Target devices: iPhone and iPad.
+- **Backend:** FastAPI on Render or Railway free tier. Cold-start delays on wake from idle are an accepted tradeoff, not a bug to fix.
+- **Database + Storage + Auth:** Supabase free tier — Postgres with `pgvector` doubles as the vector DB, so no separate vector-DB service.
+- **Background removal:** `rembg`, open-source, self-hosted, no per-image cost.
+- **AI vision + chat:** Gemini API free tier (not OpenAI — no free tier there). Prompts and call volume are designed to stay within free-tier rate limits for a small, invite-only user base.
+- **No Redis / managed queue** — no durable free tier exists for either on Render/Railway; background jobs run through a Postgres-backed job table polled in-process, not a separate worker service.
+
+**This is multi-user, not single-tenant, and not "single household."** The developer, girlfriend, sister, and possibly a few more family members each get their own account (Supabase Auth) and a fully isolated wardrobe, outfits, and chat history — enforced via `user_id` on every relevant table **plus Postgres row-level security**, not just app-level filtering. One user must never be able to see another's data, including by accident (e.g. a bug in a query) — see [database-schema.md §9](./architecture/database-schema.md). **Signup is invite-only**: the developer creates or approves each account; there is no public registration flow. Architected so it could scale further later, without over-building for scale this product doesn't have yet — optimized for "actually works great for the small group using it," not "enterprise-ready."
+
 ## 2. Problem Statement
 
 - People own more clothes than they can hold in their head. They default to the same 20% of their wardrobe ("wear 20%, own 80%").
@@ -42,7 +56,7 @@ The product must *feel* like it was made by Apple — restrained UI, generous wh
 | Wardrobe gets fully digitized | # items catalogued | 150+ items in first 2 weeks |
 | Reduces daily decision time | Time from app open → outfit selected | < 60 seconds |
 | Outfit suggestions are actually worn | % of AI-suggested outfits marked "worn" | > 30% within first month |
-| App becomes a daily habit | DAU/WAU (household of 1–2 users) | Opened 5+ days/week |
+| App becomes a daily habit | DAU/WAU across the invited user group | Opened 5+ days/week per user |
 | Attribute detection is trustworthy | % of AI-tagged attributes edited by user | < 20% edit rate after v1.1 |
 | Analytics changes behavior | Cost-per-wear / rediscovery of "forgotten" items | ≥ 10 previously-unworn items worn in 60 days |
 
@@ -68,10 +82,10 @@ The product must *feel* like it was made by Apple — restrained UI, generous wh
 13. Virtual Try-On (diffusion-based)
 14. Fashion Inspiration mode (aesthetic-driven generation: Old Money, Clean Girl, etc.)
 15. Native mobile app (React Native/Expo) if usage justifies it
-16. Multi-user / shared closets (e.g., couple's shared shoe rack)
+16. **Shared/linked closets** (e.g., a couple opting to see into each other's wardrobe, borrow-tracking) — distinct from the multi-user *accounts* already in V1 (§1a): every user already has their own isolated account today; this item is about deliberately, mutually opting two accounts into partial visibility of each other's data, which is a materially different (and currently unbuilt) feature. See PRD §10 candidate #2 for the scoped-down "private circle" version of this idea.
 
 ### Explicitly out of scope (for now)
-- Social/sharing features (public profiles, following other closets)
+- Public social/sharing features (public profiles, following other closets, discovery feeds)
 - Marketplace/resale integration
 - Try-on via physical smart mirror / IoT hardware
 - Multi-tenant B2B (styling-as-a-service for many clients) — architecture should not preclude it later, but it's not a v1 requirement
@@ -171,11 +185,30 @@ The product must *feel* like it was made by Apple — restrained UI, generous wh
 
 - **Mobile-first**: primary usage is a phone, one-handed, often while getting dressed. Design for thumb reach, camera-first flows.
 - **Performance**: wardrobe grid must stay smooth at 500+ items (virtualized lists, paginated/infinite scroll, image CDN with responsive sizes).
-- **Privacy**: this is deeply personal data (a full inventory of someone's body/appearance-adjacent data + photos). Private by default, no data sharing/training opt-in without explicit consent, easy full data export/delete.
-- **Reliability**: image processing pipeline must be resilient to model failures — always fall back to "needs manual tagging" rather than blocking the upload.
-- **Scalability**: architecture should comfortably support a single household's wardrobe (thousands of items) on V1 infra, and scale horizontally if opened to more users later.
+- **Privacy**: this is deeply personal data (a full inventory of someone's body/appearance-adjacent data + photos), owned by multiple separate real people, not one household. Private by default and **isolated by default** — see §7.1 and §1a; no data sharing between accounts without explicit, mutual opt-in (none built in V1 — see §10.1); easy full data export/delete per account.
+- **Reliability**: image processing pipeline must be resilient to model failures (including Gemini free-tier rate-limit errors, not just outages) — always fall back to "needs manual tagging" rather than blocking the upload.
+- **Scalability**: architecture should comfortably support a handful of invited users with thousands of items each on free-tier infra (§1a), and scale horizontally (paid tiers, more infra) if ever opened beyond that — not designed as if that's imminent.
 - **Accessibility**: WCAG AA, since color/pattern description is core content — always pair color swatches with text labels, not color alone.
 - **Offline resilience**: viewing an already-loaded wardrobe should degrade gracefully offline (PWA caching); actions queue and sync when back online.
+
+### 7.1 Consent, Privacy & Sensitive Content Policy (firm requirements, not suggestions)
+
+**1. Multi-user data isolation.** Every user gets their own account and a fully isolated wardrobe/outfits/chat history, enforced by `user_id` scoping **and** Postgres row-level security at the database layer — never app-level filtering alone. See [database-schema.md §9](./architecture/database-schema.md) and [system-architecture.md §6](./architecture/system-architecture.md) for the enforcement pattern, including the specific pitfall being guarded against (a backend connecting with Supabase's `service_role` key would silently bypass all of this).
+
+**2. Developer photo access — opt-in, explicit, revocable.** The developer may want a copy of uploaded photos for debugging. This is:
+   - Opt-in, **default ON** (pre-checked) — stored as `users.consent_dev_photo_access: boolean`.
+   - Presented plainly in the onboarding T&C (tone can be light, the substance must be clear — see §3 below), not buried in a way that defeats the point of asking.
+   - Revocable at any time from Settings.
+
+**3. Terms & Conditions — short, developer-voiced, not routed around.** The developer is drafting the actual T&C copy personally, in a fun/personal tone (this is for family, not a public legal document) — not something this spec writes on their behalf. The build requirement is structural: whatever the final copy says, the `consent_dev_photo_access` toggle from item 2 **must live on the same onboarding screen as the T&C text**, not a separate/skippable step — the point is that people actually see and understand what they're agreeing to. The T&C copy must also plainly cover item 4 below (sensitive content) and item 5 (third-party AI disclosure) — content, not just a link to a policy elsewhere.
+
+**4. Sensitive content category — policy-level exclusion, not automated detection.** Free-tier vision models can't reliably distinguish underwear/lingerie/intimate apparel from adjacent categories (tube tops, athletic shorts), so no classifier is built to auto-filter uploads. Instead:
+   - The T&C/onboarding copy explicitly asks users not to upload underwear/lingerie photos, since images are otherwise sent to a third-party AI (Gemini) for processing. This is enforced by **disclosed policy**, documented as a known limitation — not a technical guarantee.
+   - Items a user *does* flag/mark as a sensitive category (`garments.sensitive_category`) get a stricter, structural path regardless: manual entry only (text description + quantity, photo optional), never sent to Gemini for detection/tagging, no background removal via any third-party call. If a photo is stored at all, it's excluded from outfit-generation views, any shared/social view, and the dev-photo-access pipeline **regardless of that user's `consent_dev_photo_access` setting** — sensitive-category exclusion overrides dev-access consent, never the reverse. See [database-schema.md](./architecture/database-schema.md) `garments.sensitive_category`/`entry_mode`.
+
+**5. Third-party AI data-use transparency.** Onboarding/T&C briefly and honestly discloses that uploaded photos are sent to Google's Gemini API for clothing analysis — not just "we use AI." Per Google's own [Gemini API Additional Terms of Service](https://ai.google.dev/gemini-api/terms) (verified for this build, not assumed from general knowledge): on the **free/unpaid tier**, Google may use submitted content and generated responses to improve its products/ML models, and human reviewers may read/annotate input-output pairs (de-identified from the account first); Google's own guidance is "do not submit sensitive, confidential, or personal information to the Unpaid Services" — which is exactly why item 4 exists. (EEA/UK/Switzerland users get the stricter paid-tier data terms even on free usage, per the same source.) Free-tier terms can change; re-verify before the actual T&C copy ships.
+
+**6. Storage bucket permissions — explicitly locked, not assumed.** Supabase Storage buckets are created private with per-user path-scoped access policies, verified against the dashboard as a required Phase 0 setup step — not left at default settings. See [database-schema.md §10](./architecture/database-schema.md).
 
 ## 8. Design Principles (Apple-inspired)
 
@@ -205,10 +238,12 @@ Canvas stays near-white (warm, faintly pink-tinted) in light mode and near-black
 | Risk | Mitigation |
 |---|---|
 | Vision model mis-tags attributes (esp. fabric, which is hard from photos alone) | Always editable, show confidence, treat fabric/pattern as "best guess" not ground truth |
-| GPT/vision API costs scale with wardrobe size and chat usage | Cache aggressively, use cheaper models for bulk classification, reserve top-tier models for chat reasoning |
+| Gemini free-tier rate limits get hit as more family members are invited / usage grows | Cheapest/fastest Gemini tier for bulk tagging, aggressive caching, rate-limiting inside `AIClient` so bursts degrade to slower processing rather than hard errors (§1a, tech-stack-justification.md) |
+| Free-tier hosting cold starts (Render/Railway spin-down) feel sluggish on first open after idle | Accepted tradeoff of the $0 budget, not something engineered away; GitHub Actions cron pings also keep the daily-notification path warm at the right time |
+| No Redis/managed queue on free tier — background jobs run in-process | Postgres-backed job table + asyncio poller; documented exit ramp to a real worker+queue if volume ever outgrows this (system-architecture.md §3) |
 | Cold-start: empty wardrobe = no value | Strong onboarding flow that gets to 20+ items fast (batch capture mode), sample/demo wardrobe option |
-| Virtual try-on is expensive/immature | Deferred to V3, MVP substitutes flat-lay collage |
-| Single-household scope today, but should this ever become multi-tenant? | Schema is user_id-scoped from day one so multi-tenancy is additive, not a rewrite |
+| Virtual try-on is expensive/immature, and V3's try-on model must stay self-hosted/free under the $0 budget | Deferred to V3, MVP substitutes flat-lay collage; free/self-hosted GPU hosting for try-on is an open question deliberately left for V3 |
+| A bug in per-user filtering could leak one user's wardrobe to another | Not app-level-only: Postgres RLS enforces isolation at the database layer regardless of query bugs (database-schema.md §9); tested explicitly, not just assumed |
 
 ## 10. Proposed Differentiators (USP Candidates)
 
@@ -229,8 +264,12 @@ Two of the open questions below block real architecture work if left unresolved,
 
 ## 11. Open Questions for Stakeholder (you)
 
+**Resolved by the locked technical constraints (§1a):**
+- ~~Single user vs. shared household wardrobe~~ → **multi-user, invite-only**, each account fully isolated (not a household model at all — see §1a).
+- ~~Preferred vision/LLM vendor~~ → **Gemini API free tier**, locked by the $0 budget constraint (OpenAI has no free tier).
+
+**Still open:**
 1. Confirm product name (Muse is a placeholder).
-2. Single user vs. shared household wardrobe in V1 (schema supports either; recommend single-owner-per-item with optional household grouping later).
-3. Preferred vision/LLM vendor split — brief says OpenAI GPT; confirm if Anthropic Claude is acceptable as an alternate/secondary vision-and-reasoning provider (useful for cost/redundancy).
-4. **Social/community scope** (raised by USP candidate #2 above): defaulted to *None* per §10.1 above — confirm, or redirect toward a private circle or public feed instead.
-5. Which of the remaining USP candidates in §10 (contextual memory, closet health score, leaving-in-10 nudge) are worth turning into full specs next? Stylist persona/voice was defaulted to "yes" per §10.1.
+2. **Social/community scope** (raised by USP candidate #2 above): defaulted to *None* per §10.1 above — confirm, or redirect toward a private circle or public feed instead.
+3. Which of the remaining USP candidates in §10 (contextual memory, closet health score, leaving-in-10 nudge) are worth turning into full specs next? Stylist persona/voice was defaulted to "yes" per §10.1.
+4. T&C copy itself — you're drafting this personally; flag when it's ready so the onboarding screen spec (§7.1) can be checked against the actual text.

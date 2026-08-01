@@ -2,18 +2,24 @@
 
 ## 1. Onboarding
 
+Signup is **invite-only** — there is no public "sign up" entry point; a new user always arrives via a link containing an invite token the developer generated for them.
+
 ```mermaid
 flowchart TD
-    A["Sign up (email or Google/Apple)"] --> B["Welcome + brand moment<br/>('Your closet, digitized')"]
-    B --> C["Quick profile: sizes, style leanings,<br/>location for weather"]
+    A["Open invite link (token)"] --> A2["Set up account<br/>(email/password or Google/Apple via Supabase Auth)"]
+    A2 --> B["T&C + Consent screen (required, not skippable)<br/>— dev photo-access toggle lives HERE, on this screen<br/>— default ON, pre-checked<br/>— plainly states: sensitive-content policy (ask not to<br/>&nbsp;&nbsp;upload underwear/lingerie),<br/>&nbsp;&nbsp;photos go to Google Gemini for analysis"]
+    B --> B2{"Accept T&C?"}
+    B2 -->|No| A2note["Cannot proceed —<br/>account stays incomplete"]
+    B2 -->|Yes| B3["tc_accepted_at + tc_version recorded;<br/>consent_dev_photo_access saved as toggled"]
+    B3 --> C["Quick profile: sizes, style leanings,<br/>location for weather"]
     C --> D["Batch capture mode:<br/>'Let's add your first 10 items'"]
-    D --> E{"Photo per item"}
+    D --> E{"Photo per item, or<br/>'this one's sensitive' → Flow 2a"}
     E --> F["AI processes in background<br/>(user keeps shooting more items)"]
     F --> G["Review queue: confirm/correct<br/>AI-tagged attributes"]
     G --> H["Home ('Today') screen<br/>with first outfit suggestion"]
 ```
 
-Design intent: get to a *usable* wardrobe (10–20 items) inside the first session without making the user wait on each photo — capture is decoupled from processing.
+Design intent: get to a *usable* wardrobe (10–20 items) inside the first session without making the user wait on each photo — capture is decoupled from processing. The T&C/consent step is a hard gate (§PRD 7.1) — `onboarding_completed_at` cannot be set, and most endpoints stay 403, until it's cleared.
 
 ## 2. Add a Garment (core loop, used constantly)
 
@@ -30,6 +36,22 @@ flowchart TD
     H --> J["Item live in Wardrobe"]
     I --> J
 ```
+
+## 2a. Add a Sensitive-Category Item (manual entry, bypasses the AI pipeline entirely)
+
+```mermaid
+flowchart TD
+    A["Tap '+' → category picker"] --> B{"Category is underwear/lingerie/similar,<br/>auto-flagged sensitive —<br/>or user manually toggles 'sensitive'"}
+    B --> C["Manual entry form (no camera-first prompt):<br/>description, quantity, category, color (optional)"]
+    C --> D{"Add a photo anyway? (optional)"}
+    D -->|Skip| E["Save — entry_mode=manual,<br/>no image, never touches rembg or Gemini"]
+    D -->|Add photo| F["Photo stored directly in Supabase Storage —<br/>NOT background-removed, NOT sent to Gemini,<br/>NOT embedded"]
+    F --> G["Save — entry_mode=manual, sensitive_category=true"]
+    E --> H["Item exists in Wardrobe for record-keeping,<br/>excluded from: outfit-generation candidates,<br/>any shared/social view, dev-photo-access export —<br/>regardless of that user's dev-access consent setting"]
+    G --> H
+```
+
+Rationale: automated filtering of underwear/lingerie isn't reliable at free-tier vision-model quality (PRD §7.1), so this category gets a structurally different, AI-free path rather than an attempted classifier — and the exclusion from AI processing, outfit generation, and dev-photo-access is enforced by the data model (`sensitive_category`, `entry_mode`), not by hoping every future feature remembers to check.
 
 ## 3. Outfit Generation (manual, from Wardrobe or Home)
 
