@@ -20,36 +20,40 @@ Assumes a small build team (1–2 full-stack/AI engineers + AI-assisted developm
 
 ## Phase 0 — Foundations (Sprints 1–2)
 
-**Sprint 1: Infra & Auth**
+**Sprint 1: Infra & Auth (all free-tier — see [tech-stack-justification.md](../tech-stack-justification.md))**
 - Monorepo scaffold (per [folder-structure.md](../architecture/folder-structure.md)).
-- Postgres + pgvector provisioned (Supabase), docker-compose for local dev.
-- Auth integrated (Supabase Auth): sign up/in, session handling in Next.js + FastAPI JWT validation.
-- CI pipeline: lint, typecheck, test, preview deploy.
-- Object storage bucket + signed upload URLs wired end-to-end (upload a raw file, confirm it lands in storage).
+- Postgres + pgvector provisioned (Supabase free tier), docker-compose for local dev (no Redis).
+- Auth integrated (Supabase Auth), **invite-only**: `invites` table + redemption flow — no public sign-up route ever gets built, confirm this explicitly rather than adding a public form "for now."
+- Row-Level Security enabled and policy-tested on every `user_id`-scoped table from the *first* migration (database-schema.md §9) — verified with a test asserting one user's session cannot read another's rows even without a `WHERE user_id` clause. Confirm FastAPI's DB connection uses the per-request JWT-claim pattern, not the Supabase `service_role` key, for ordinary queries.
+- CI pipeline: lint, typecheck, test, preview deploy (GitHub Actions, also doubles as the free scheduled-job runner later — see Sprint 12).
+- **Storage bucket lockdown checklist (required, manual verification):** buckets created private (never public), per-user path-scoped RLS policies on `storage.objects` in place, signed URLs used client-side — checked against the Supabase dashboard directly, not assumed from defaults (database-schema.md §10).
 
-**Sprint 2: Design system & app shell**
+**Sprint 2: Design system, app shell & onboarding gate**
 - Design tokens (color/type/spacing per [ui-wireframes.md](../design/ui-wireframes.md)) implemented in Tailwind config.
-- Core UI primitives: Button, Card, Sheet, Chip, Tab bar, Score badge.
-- App shell: bottom tab navigation, onboarding flow skeleton (screens only, no AI yet).
+- Core UI primitives: Button, Card, Sheet, Chip, Tab bar, Score badge, Toggle.
+- App shell: bottom tab navigation.
+- **Onboarding flow, including the T&C + consent screen** (screen 0 in the wireframes): invite-token redemption → account creation → un-skippable T&C/consent screen (`consent_dev_photo_access` toggle default-on, embedded in the same screen, not routed around it) → profile setup. T&C copy itself is developer-authored outside this repo's docs (PRD §7.1) — the screen ships with placeholder copy until that's delivered, but the gating logic (`tc_accepted_at`/`tc_version` required before `onboarding_completed_at`) is real from this sprint.
 - PWA manifest + service worker scaffold (installable, no offline logic yet).
 
-*Exit criteria: a signed-in user can navigate an empty app shell across all tabs on a phone.*
+*Exit criteria: an invited user can redeem their invite, get through the T&C/consent gate, and navigate an empty app shell across all tabs on a phone — and a second invited user cannot see anything belonging to the first, verified, not assumed.*
 
 ---
 
 ## Phase 1 — AI Wardrobe Core (Sprints 3–5)
 
 **Sprint 3: Ingestion pipeline (backend)**
-- `garments`, `garment_images`, `garment_embeddings` tables + migrations.
-- Redis queue + worker service scaffold; background-removal job (`rembg`) working end-to-end.
-- Vision attribute-extraction job (structured GPT-4o/Claude call) with the JSON contract from [system-architecture.md §5.1](../architecture/system-architecture.md).
+- `garments`, `garment_images`, `garment_embeddings`, `processing_jobs` tables + migrations.
+- In-process `asyncio` job poller scaffold (no Redis, no separate worker deployable — [system-architecture.md §3](../architecture/system-architecture.md)); background-removal job (`rembg`, self-hosted) working end-to-end.
+- Vision attribute-extraction job (structured Gemini API call, free tier) with the JSON contract from [system-architecture.md §5.1](../architecture/system-architecture.md); `AIClient` wraps rate-limit/quota handling from day one, not bolted on later.
 - SSE endpoint for upload status.
+- `entry_mode`/`sensitive_category` fields on `garments` + the manual-entry endpoint (`POST /garments/manual`) land in this sprint too — sensitive items are a day-one schema concern, not a retrofit.
 
 **Sprint 4: Add-item & review flow (frontend)**
 - Camera-first capture screen, multi-photo support.
 - Optimistic "processing" card → live status update via SSE.
 - Attribute review sheet (editable chips, confidence-aware highlighting).
 - Save/correct → persists to `garments`.
+- Sensitive-category manual entry screen (wireframes screen 03a): category picker routes here instead of the camera for flagged categories; no image ever reaches `rembg` or Gemini from this path.
 
 **Sprint 5: Wardrobe browse**
 - Wardrobe grid with category filters, color/season/occasion filters, search (structured first, semantic search wired once embeddings are populated).
@@ -115,7 +119,7 @@ Assumes a small build team (1–2 full-stack/AI engineers + AI-assisted developm
 ## Phase 5 — Notifications, Planner, Moodboards, Inspiration & Full Analytics (Sprints 12–14)
 
 **Sprint 12: Daily notification + Weekly Planner**
-- Scheduled job: per-user daily outfit generation + Web Push delivery (VAPID), email fallback.
+- Scheduled job: `/internal/cron/daily-notifications` endpoint + a GitHub Actions `schedule:` workflow to ping it (no paid scheduler — this also wakes a sleeping free-tier instance); per-user daily outfit generation + Web Push delivery (VAPID), email fallback (Resend free tier).
 - `outfit_plans` table + `/planner` endpoints; notification job checks for a user-set plan before generating a fresh suggestion (a planned outfit always takes precedence).
 - Weekly Planner UI (day strip, plan/reassign flow, repeat-nudge tied into novelty scoring).
 - Notification settings (time picker) in Settings.
@@ -139,14 +143,14 @@ Assumes a small build team (1–2 full-stack/AI engineers + AI-assisted developm
 - Canvas-based compositing of background-removed items into a styled flat-lay image, cached per outfit (`collage_image_url`).
 
 **Sprint 16: Virtual Try-On (stretch)**
-- Evaluate hosted vs. self-hosted diffusion garment-transfer model (OOTDiffusion/IDM-VTON or a hosted vendor) against cost/latency/quality; ship behind a feature flag given cost uncertainty.
+- Evaluate self-hosted diffusion garment-transfer models (OOTDiffusion/IDM-VTON) against latency/quality *and* against whether a free/free-trial GPU host actually exists at this point — hosted try-on APIs are out under the $0 constraint (tech-stack-justification.md), so this sprint may conclude "not yet feasible at $0" rather than shipping something; that's an acceptable outcome, not a failure of the sprint.
 
 **Sprint 17: Performance, polish, hardening**
 - Wardrobe grid virtualization/performance pass at 500+ items.
 - Offline PWA caching pass.
 - Accessibility audit (WCAG AA).
-- Cost/observability dashboard for AI spend (Sentry + usage logging via `AIClient`).
-- Full data export/delete flow (privacy commitment from the PRD).
+- Gemini free-tier quota/rate-limit observability dashboard (Sentry + usage logging via `AIClient`) — the first thing likely to need attention as more family members get invited.
+- Full data export/delete flow (privacy commitment from the PRD), scoped per-account given multi-user isolation.
 
 ---
 
@@ -155,7 +159,7 @@ Assumes a small build team (1–2 full-stack/AI engineers + AI-assisted developm
 | Role | Focus |
 |---|---|
 | Full-stack engineer | Next.js frontend, FastAPI routers/services, deployment |
-| AI/backend engineer | Worker pipeline, prompt design, outfit-scoring engine, RAG/tool-calling |
+| AI/backend engineer | In-process job pipeline, Gemini prompt design + rate-limit handling, outfit-scoring engine, RAG/tool-calling |
 | Design (part-time/self-served via this doc set) | Wireframe fidelity increases as real garment photography becomes available |
 
 A solo builder using AI-assisted coding (e.g., Claude Code) can realistically compress this to roughly the same phase *order* but fewer, longer sprints — the sequencing (ingestion → generation → chat → auxiliary features → try-on) is the part that shouldn't be reordered, since each phase depends on data/infrastructure the previous one produced.
