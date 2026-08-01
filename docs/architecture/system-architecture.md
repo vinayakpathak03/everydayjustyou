@@ -192,6 +192,15 @@ flowchart TB
 - Conversation memory: last N turns + a per-user "style profile" summary (preferred colors, sizing notes, aesthetic leanings) injected as system context, refreshed periodically from Closet Analytics rather than recomputed every message.
 - Grounding rule: the assistant is only allowed to reference items returned by `search_wardrobe`/`generate_outfit` — never free-associates clothing that isn't in the database (prevents hallucinated wardrobe items).
 
+#### 5.3.1 Stylist Persona (USP candidate #1, selected — PRD §10.1)
+
+The tool-use mechanics above are what make the Stylist *work*; the persona is what makes it feel different from a generic chatbot bolted onto a wardrobe app. Implementation is almost entirely a system-prompt and product-copy concern, not new infrastructure:
+
+- **A fixed voice, not a configurable one.** One consistent persona (warm, direct, a little playful, opinionated without being pushy — closer to a trusted friend who happens to have great taste than a customer-service bot) defined once in a versioned system prompt (`ai/prompts/stylist_persona.md`), not exposed as a user-configurable "tone" setting — the point is a considered point of view, not a blank slate.
+- **Opinions over options.** Where a generic assistant hedges ("here are 5 outfits, you decide"), the persona leads with a top pick and *says why*, then offers alternatives — mirrors the rationale-first pattern already in the Outfit Generator (§5.2) rather than introducing a new behavior.
+- **Voice input/output (optional, additive).** Speech-to-text on the chat input (native browser `SpeechRecognition`/Whisper API) and optional text-to-speech on replies — off by default, toggled in Settings — reusing the existing SSE text stream as the source for TTS rather than a parallel pipeline.
+- **No schema or privacy impact.** Persona is prompt-layer only; conversation storage (`chat_conversations`/`chat_messages`) is unchanged from §5.3's design above.
+
 ### 5.4 Embeddings & Semantic Search
 
 - **Image embeddings:** CLIP (or a hosted multimodal embedding endpoint) over the background-removed image → used for "similar items," duplicate detection, and visual outfit-coherence scoring.

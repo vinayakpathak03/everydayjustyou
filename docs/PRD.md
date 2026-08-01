@@ -220,10 +220,17 @@ Everything in §6 closes the gap with existing wardrobe apps. None of it is what
 4. **A closet health score you can watch move.** §6.15 gives the raw composition/usage data; the differentiator is compressing it into one number the AI actively coaches toward — closer to a credit-score or sleep-score pattern than a dashboard — with the AI proposing one concrete action per week ("wear the navy blazer once this week and your score goes up 4 points") rather than just reporting stats passively.
 5. **A "leaving in 10" check.** A lock-screen widget / time-boxed final nudge — not just a morning notification, but a last-call confirmation a few minutes before the user's usual leave time, cross-referencing the plan against a live weather check in case the forecast shifted since the outfit was chosen.
 
+### 10.1 Default decisions taken (pending confirmation)
+
+Two of the open questions below block real architecture work if left unresolved, so a default was taken rather than stalling — both are easy to override:
+
+- **Social scope → None for V1.** No follow/like/share of other people's closets; the app stays fully private/single-user. This is the option most consistent with the product's actual premise (a personal AI stylist, not a social network) and with the privacy commitments already in §7 — and it's the safer default because loosening privacy later is easy, tightening it after users expect otherwise is not. Candidate #2 above stays documented as a future option, not built.
+- **First USP to formalize → #1, Stylist persona/voice.** Lowest technical lift, no schema/privacy implications, and it makes the AI Stylist chat (already core to the MVP) feel distinct from day one. See system-architecture.md §5.3.1 for the resulting spec. The other three USP candidates remain unformalized, ready to spec on request.
+
 ## 11. Open Questions for Stakeholder (you)
 
 1. Confirm product name (Muse is a placeholder).
 2. Single user vs. shared household wardrobe in V1 (schema supports either; recommend single-owner-per-item with optional household grouping later).
 3. Preferred vision/LLM vendor split — brief says OpenAI GPT; confirm if Anthropic Claude is acceptable as an alternate/secondary vision-and-reasoning provider (useful for cost/redundancy).
-4. **Social/community scope** (raised by USP candidate #2 above): stay fully private/single-user, add a small opt-in private circle, or go further toward a public discovery feed like the reference screenshots? This changes §7's privacy commitments and the schema, so it's worth deciding before any of it is built rather than defaulting into it.
-5. Which of the USP candidates in §10 are worth turning into full specs (architecture, schema, wireframes) next?
+4. **Social/community scope** (raised by USP candidate #2 above): defaulted to *None* per §10.1 above — confirm, or redirect toward a private circle or public feed instead.
+5. Which of the remaining USP candidates in §10 (contextual memory, closet health score, leaving-in-10 nudge) are worth turning into full specs next? Stylist persona/voice was defaulted to "yes" per §10.1.
