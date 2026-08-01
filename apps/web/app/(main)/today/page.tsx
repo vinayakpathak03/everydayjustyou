@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 
-// Empty state — Phase 1 (Sprint 3-5) wires this to real generated outfits.
+// Empty state — Outfit Generator (Phase 2) wires this to real generated outfits.
 // See docs/design/ui-wireframes.md screen 1.
 export default function TodayPage() {
   return (
@@ -14,7 +15,9 @@ export default function TodayPage() {
           Add a few items to your wardrobe and Muse will start suggesting outfits here.
         </p>
       </div>
-      <Button className="self-start">Add item</Button>
+      <Link href="/wardrobe/add">
+        <Button className="self-start">Add item</Button>
+      </Link>
     </main>
   );
 }

@@ -43,3 +43,85 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+/** multipart/form-data upload — separate from apiFetch because that helper
+ * unconditionally sets Content-Type: application/json, which would break a
+ * FormData body (the browser needs to set its own multipart boundary). */
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const headers = new Headers();
+  if (session?.access_token) {
+    headers.set("Authorization", `Bearer ${session.access_token}`);
+  }
+
+  const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let detail: unknown = null;
+    try {
+      detail = await res.json();
+    } catch {
+      // no JSON body
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return (await res.json()) as T;
+}
+
+export type GarmentStatusEvent = { image_id: string; garment_id: string; status: string };
+
+/** Consumes GET /garments/events via fetch+ReadableStream rather than the native
+ * EventSource API — EventSource can't send an Authorization header, and query-
+ * param tokens would leak into server logs/proxies. Returns an abort function. */
+export function subscribeToGarmentEvents(onEvent: (e: GarmentStatusEvent) => void): () => void {
+  const controller = new AbortController();
+
+  (async () => {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE_URL}/api/v1/garments/events`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        signal: controller.signal,
+      });
+    } catch {
+      return; // aborted before the connection opened
+    }
+    const reader = res.body?.getReader();
+    if (!reader) return;
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
+        if (!dataLine) continue;
+        try {
+          onEvent(JSON.parse(dataLine.slice("data: ".length)) as GarmentStatusEvent);
+        } catch {
+          // malformed frame — skip rather than crash the stream reader
+        }
+      }
+    }
+  })();
+
+  return () => controller.abort();
+}

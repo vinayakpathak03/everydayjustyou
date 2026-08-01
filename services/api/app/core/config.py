@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     supabase_url: str
     supabase_jwt_secret: str
+    supabase_service_role_key: str = ""
 
     admin_emails: str = ""
     cron_shared_secret: str = ""
