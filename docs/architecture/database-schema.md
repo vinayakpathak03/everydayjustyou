@@ -102,6 +102,7 @@ The core catalog item.
 | purchase_date | date nullable | |
 | purchase_source | text nullable | store/site name |
 | condition | text nullable | `new, like_new, good, worn` |
+| acquisition_type | text nullable | `new, pre_loved, rental, handmade, gifted, undefined` — powers the Wardrobe Composition chart (PRD §6.15) |
 | is_favorite | boolean default false | |
 | is_archived | boolean default false | soft-hide from active wardrobe without deleting |
 | ai_description | text | generated natural-language description (embedding source) |
@@ -159,12 +160,13 @@ Freeform user tags (many-to-many), distinct from AI-structured attributes.
 | id | uuid PK | |
 | user_id | uuid FK → users | |
 | name | text nullable | user-editable label |
-| source | text | `generated, manual, chat` |
+| source | text | `generated, manual, shuffle, chat` — `manual` = built on the Canvas (§6.13), `shuffle` = Dress Me/Quick Shuffle (§6.14) |
 | context | jsonb | inputs used to generate it: `{weather, occasion, mood, event, aesthetic}` |
 | score | smallint | 1–100 |
 | score_breakdown | jsonb | `{color_harmony, formality_fit, weather_fit, novelty}` |
 | rationale | text | LLM-generated "why this works" |
 | collage_image_url | text nullable | rendered flat-lay preview |
+| canvas_layout | jsonb nullable | populated only for `source = manual` — per-item `{garment_id, x, y, scale, rotation, z_index}` so a Canvas outfit can be reopened and re-edited exactly as arranged |
 | is_favorite | boolean default false | |
 | created_at | timestamptz | |
 
@@ -201,6 +203,8 @@ Backbone of Closet Analytics (most/least worn, cost-per-wear, "I wore this yeste
 | created_at | timestamptz | |
 
 A materialized view `garment_wear_stats` (refreshed nightly or on-write) aggregates: `times_worn`, `last_worn_on`, `cost_per_wear = purchase_price / NULLIF(times_worn,0)`.
+
+A second view, `wardrobe_usage_stats`, computes the rolling-window figures behind PRD §6.15's usage gauge and composition chart: `% of active garments with >=1 wear_logs row in the trailing N days` (default 90), plus the same figure for the *prior* N-day window so the UI can show a trend delta ("You wore 20% more"), and a `GROUP BY acquisition_type` breakdown for the composition donut. Computed as a view rather than stored, since it's cheap to derive from `wear_logs` + `garments` at read time and never needs to be point-in-time-accurate the way `garment_wear_stats`' cost-per-wear does.
 
 ## 5. Conversational AI
 

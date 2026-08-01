@@ -12,6 +12,7 @@ Design language: near-white/near-black neutral canvas, one accent used sparingly
 - Bottom tab bar: Home, Wardrobe, Stylist (center, emphasized), Analytics, Profile.
 
 ## 2. Wardrobe Grid
+- Stats header (PRD §6.16): item / outfit / moodboard counts, quick-jump category rail, favorites/archived filters — private by default, this is a personal-collection view, not a public profile.
 - Segmented filter bar (Category chips: All, Tops, Bottoms, Dresses, Outerwear, Shoes, Bags, Accessories, Jewelry) — horizontally scrollable.
 - Secondary filter sheet (tap "Filters"): color swatches, season, occasion, favorites-only, brand.
 - Search bar supports natural language ("flowy summer dress") routed to semantic search.
@@ -22,7 +23,7 @@ Design language: near-white/near-black neutral canvas, one accent used sparingly
 - Full-screen camera view by default; gallery picker as secondary option.
 - After capture: instant card with a subtle shimmer/skeleton state labeled "Working on it..."
 - Multi-photo: horizontal thumbnail strip under the primary photo, "+add another angle".
-- Review sheet slides up from bottom (iOS-sheet style): attribute fields as tappable chips/pickers, pre-filled and highlighted if AI confidence is low (so the user knows what's worth double-checking) — never a blocking red "error," just a soft affordance to review.
+- Review sheet slides up from bottom (iOS-sheet style): attribute fields as tappable chips/pickers, pre-filled and highlighted if AI confidence is low (so the user knows what's worth double-checking) — never a blocking red "error," just a soft affordance to review. Acquisition type (new/pre-loved/rental/handmade/gifted) is an optional chip here, feeding §6.15's composition analytics.
 
 ## 4. Item Detail
 - Full-bleed hero image, swipeable through all photos for that item.
@@ -35,43 +36,57 @@ Design language: near-white/near-black neutral canvas, one accent used sparingly
 - Context sheet (optional, collapsible): occasion, mood chips, aesthetic chips, color preference.
 - Result: swipeable full-screen outfit cards (Tinder-like stack), each showing the flat-lay collage, score badge (1–100, colored ring), and a 1–2 line rationale beneath.
 - Tap a card → detail view: itemized list of the outfit's pieces (each tappable to its own Item Detail), full rationale text, per-slot "swap" icon, "Wear this today" primary button.
+- Three ways into an outfit from here on, all writing to the same `outfits` table: accept an AI suggestion (this screen), assemble by hand (screen 6, Canvas), or pin-and-shuffle (screen 7, Dress Me).
 
-## 6. AI Stylist Chat
+## 6. Styling Canvas (new)
+- Freeform board: items dragged in from the wardrobe grid, layered and positioned by hand — resize, rotate slightly, reorder front/back, duplicate, delete, undo.
+- Toolbar: undo (top-left), Save (top-right, primary).
+- This is the manual counterpart to screen 5 — same outfit model underneath, `source = manual`, reopenable and re-editable via the stored layout.
+
+## 7. Dress Me — Quick Shuffle (new)
+- Item grid organized by slot, browsable in grid/list/single-column layouts (toggle row at the bottom).
+- Pin icon on any item locks it in; a shuffle (dice) control re-rolls everything unlocked, constrained by the same compatibility engine as screen 5 — not random noise.
+- Sits between full AI generation (5) and fully manual (6): fast, game-like, but still rule-grounded.
+
+## 8. AI Stylist Chat
 - Standard chat layout, but assistant messages can render **outfit cards inline**, not just text — the chat is a first-class outfit-suggestion surface, not just Q&A.
 - Suggested prompt chips above the input on empty state: "What should I wear for dinner?", "I have a job interview", "Show me pink outfits".
 - Input bar supports text + camera (e.g., "what do you think of this new piece with my closet?").
 
-## 7. Closet Analytics
+## 9. Closet Analytics
 - Top stat row: total items, avg. cost-per-wear, % worn in last 30 days — big numbers, minimal chrome.
+- **Wardrobe usage gauge** (§6.15): a single horizontal meter, 0–100%, with the trend delta as a small pill ("You wore 20% more").
+- **Composition donut** (§6.15): segmented by acquisition type (new / pre-loved / rental / handmade / gifted / undefined), filterable by category; each segment uses a distinct accent tint rather than one flat color, so the chart itself carries information at a glance.
 - Sections as horizontally-scrollable card rows: Most Worn, Rediscover These (least worn), Possible Duplicates, Missing Essentials, Seasonal Rotation.
 - Tapping any card routes into the relevant action flow (outfit suggestion, shopping, archive prompt).
 
-## 8. Packing Assistant
+## 10. Packing Assistant
 - Trip form (destination, dates, type) as a clean stepper.
 - Result: a day-by-day header strip (day name + date badge, e.g. "Mon 03", "Tue 04"...) each with its planned outfit thumbnail beneath — the checklist is organized by day first, not a single flat list — plus overall progress ("1/10 items packed") at the top of the trip card.
 - Tapping a day's thumbnail opens that day's outfit detail (same as Flow 3) to swap pieces without leaving the trip.
 
-## 9. Shopping Assistant
+## 11. Shopping Assistant
 - Card list, each showing the *archetype* being recommended (e.g., "Tan crossbody bag") rendered as an elegant sketch/placeholder (not a real product yet in V1) with "+15 pts to 4 of your outfits" framing and the outfits it would unlock.
 
-## 10. Fashion Inspiration
+## 12. Fashion Inspiration
 - Grid of aesthetic mood-board tiles (Old Money, Clean Girl, Minimalist, Korean Fashion, Streetwear, Quiet Luxury), each a curated color/texture thumbnail.
 - Selecting one behaves like Outfit Generator, pre-set to that aesthetic's scoring bias.
 
-## 11. Moodboards
+## 13. Moodboards
 - Grid of board covers (named tiles: "Party", "Office", "Summer", "Bday wishes"), each a 2x2 preview of its most recent clips.
 - Inside a board: masonry grid of saved clips; each clip that has a wardrobe match shows a small badge — tap to see the matched owned item(s) side by side with the inspiration image.
 - "+" adds a clip via share-sheet URL, screenshot upload, or in-app camera — same capture-first pattern as adding a garment (Flow 2), reusing the same processing/review affordance.
 - "Style me like this board" CTA on each board hands off into the Outfit Generator / Stylist with that board as context.
 
-## 12. Weekly Planner
+## 14. Weekly Planner
 - Horizontal day strip (Sun–Sat), each day a compact column: weekday label, date, small weather glyph, and either a planned-outfit thumbnail or an empty "+ plan" state.
 - Today is visually emphasized (accent-colored date badge); past days in the current week show what was actually worn (read from `wear_logs`) rather than the plan, once the day has passed.
 - Tapping an empty day opens the same swipeable outfit-generation flow as Flow 3, but the "Wear this today" primary action becomes "Plan for [day]."
 - A subtle inline nudge appears if a day's plan repeats an outfit worn in the last N days ("You wore this Tuesday too — swap it up?").
 
-## 13. Settings / Profile
+## 15. Settings / Profile
 - Notification time picker (daily outfit push).
 - Style profile (sizes, preferred colors/aesthetics, dislikes).
 - Calendar connection toggle.
 - Privacy & data (export, delete account) — surfaced clearly, not buried, given how personal this data is.
+- Private-circle sharing controls, if that USP candidate (PRD §10) gets greenlit — off by default.

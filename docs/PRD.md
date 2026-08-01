@@ -147,6 +147,26 @@ The product must *feel* like it was made by Apple — restrained UI, generous wh
 - Distinct from the Daily Outfit Notification (6.9), which is a single-day AI push; the Weekly Planner is the user-driven, editable calendar surface that the notification and Smart Recommendations both read from and write into — planning Tuesday's outfit on Sunday should mean Tuesday's notification reflects that choice rather than generating a fresh one.
 - Drag/tap to reassign an outfit to a different day; conflicts (same outfit planned twice in a short window) get a gentle "you're repeating this soon" nudge, tying into Closet Analytics' novelty scoring (6.2).
 
+### 6.13 Manual Styling Canvas (new)
+- As a user, I can build an outfit by hand — drag items from my wardrobe onto a freeform board, layer/resize/reposition them (shirt behind tie, glasses overlapping the collar, bag to the side), duplicate or delete a piece, undo, and save the result as a real outfit.
+- This is the manual counterpart to the AI Outfit Generator (6.2) — same underlying `outfits`/`outfit_items` model (`source = manual`), just user-arranged instead of AI-assembled. A saved Canvas outfit is still eligible for scoring, wear-logging, and analytics like any other outfit.
+- Rationale: the AI generator is right most of the time but not always — sometimes a user already knows the exact combination they want and just needs a fast way to lay it out and see it as a cohesive image, not a bulleted list.
+
+### 6.14 Dress Me — Quick Shuffle (new)
+- A middle ground between full AI generation (6.2) and the freeform Canvas (6.13): browse a grid of eligible items per slot, **pin** any piece to lock it in, then **shuffle** to have the engine re-roll the unlocked slots — using the same compatibility-scoring engine as the Outfit Generator, so shuffles are constrained-random, not noise.
+- Layout density toggle (grid / list / single-column) for browsing; a "surprise me" full shuffle re-rolls everything at once.
+- Gives users a fast, game-like way to explore combinations they wouldn't have thought to ask the AI for by name, while staying grounded in real compatibility rules.
+
+### 6.15 Wardrobe Composition & Sustainability Analytics (new — extends 6.5)
+- Track **acquisition type** per item (new, pre-loved/secondhand, rental, handmade, gifted, undefined) as an optional field at add-time.
+- **Wardrobe usage gauge**: % of the closet actually worn in a rolling window (e.g., last 90 days), with a trend delta against the prior window ("You wore 20% more").
+- **Composition breakdown**: donut/segment view of the closet by acquisition type (and, filterable, by category) — surfaces things like over-reliance on new purchases vs. pre-loved/rental, which feeds back into the Shopping Assistant's recommendations (nudging toward pre-loved/rental options when that matches the user's stated preference).
+- This reframes Closet Analytics from purely descriptive ("here's your data") toward the product's underlying thesis — wear more of what you already own — with a metric the user can watch move over time.
+
+### 6.16 Wardrobe Profile & Stats Header (new)
+- A personal (private-by-default — see 6.11's privacy note and §7 NFRs) stats header atop the Wardrobe: item / outfit / moodboard counts, quick-jump category rail, favorites and archived filters.
+- Purely a richer presentation of data the app already has (`garments`, `outfits`, `moodboards` counts) — no new backend surface beyond existing aggregate queries; it exists so the wardrobe *feels* like a curated personal collection the moment you open it, not just a grid.
+
 ## 7. Non-Functional Requirements
 
 - **Mobile-first**: primary usage is a phone, one-handed, often while getting dressed. Design for thumb reach, camera-first flows.
@@ -190,8 +210,20 @@ Canvas stays near-white (warm, faintly pink-tinted) in light mode and near-black
 | Virtual try-on is expensive/immature | Deferred to V3, MVP substitutes flat-lay collage |
 | Single-household scope today, but should this ever become multi-tenant? | Schema is user_id-scoped from day one so multi-tenancy is additive, not a rewrite |
 
-## 10. Open Questions for Stakeholder (you)
+## 10. Proposed Differentiators (USP Candidates)
+
+Everything in §6 closes the gap with existing wardrobe apps. None of it is what would make someone choose *this* app over them. These are candidate differentiators — genuinely distinct angles this product can own, given its actual origin (a personal AI stylist built by one person for another, not a social network chasing DAUs). Flagged for selection before any get a full spec; none are built into the architecture yet except where noted.
+
+1. **A stylist with a voice, not a form.** The AI Stylist (6.4) already exists; the differentiator is giving it a consistent, warm, opinionated *persona* — closer to a real personal stylist's voice than a generic assistant — including optional voice input/output. Competitors have chat features; none commit to a personality. Low technical lift (mostly prompt/system-message design), high perceived-quality payoff.
+2. **A private circle of two (or three), not a public feed.** The screenshots that prompted this round show a public social feed (follow, like, share to strangers) — which cuts against this product's actual premise and the privacy commitments already in §7. A scoped-down version fits instead: an **opt-in private circle** (just the couple, maybe a sibling or close friend) where you can leave a note on someone's planned outfit ("wear this for our date"), get gently notified when they're deciding what to wear, or — for the closet-sharing case — see when a trusted person's wardrobe has something that'd complete one of your outfits ("Priya has a blazer like the one your capsule is missing — ask to borrow?"). This is the one item on this list that materially changes the schema and the privacy stance, so it's the one flagged for an explicit decision below rather than assumed.
+3. **Contextual memory, used out loud.** The data already exists in `wear_logs`; the differentiator is the AI *proactively* surfacing it: "Last time you interviewed at a company like this, you wore X" or "This time last year, you wore Y for a day like today." Turns a cold database into something that feels like it actually remembers you.
+4. **A closet health score you can watch move.** §6.15 gives the raw composition/usage data; the differentiator is compressing it into one number the AI actively coaches toward — closer to a credit-score or sleep-score pattern than a dashboard — with the AI proposing one concrete action per week ("wear the navy blazer once this week and your score goes up 4 points") rather than just reporting stats passively.
+5. **A "leaving in 10" check.** A lock-screen widget / time-boxed final nudge — not just a morning notification, but a last-call confirmation a few minutes before the user's usual leave time, cross-referencing the plan against a live weather check in case the forecast shifted since the outfit was chosen.
+
+## 11. Open Questions for Stakeholder (you)
 
 1. Confirm product name (Muse is a placeholder).
 2. Single user vs. shared household wardrobe in V1 (schema supports either; recommend single-owner-per-item with optional household grouping later).
 3. Preferred vision/LLM vendor split — brief says OpenAI GPT; confirm if Anthropic Claude is acceptable as an alternate/secondary vision-and-reasoning provider (useful for cost/redundancy).
+4. **Social/community scope** (raised by USP candidate #2 above): stay fully private/single-user, add a small opt-in private circle, or go further toward a public discovery feed like the reference screenshots? This changes §7's privacy commitments and the schema, so it's worth deciding before any of it is built rather than defaulting into it.
+5. Which of the USP candidates in §10 are worth turning into full specs (architecture, schema, wireframes) next?

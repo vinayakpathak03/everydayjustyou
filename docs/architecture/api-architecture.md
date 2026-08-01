@@ -25,10 +25,14 @@ FastAPI, async, versioned under `/api/v1`. Auth via short-lived JWT (issued by S
 │   └── /generate            POST — the Outfit Generator (6.2/6.3 in PRD)
 │   └── /{id}/alternatives   POST — swap one slot, re-score
 │   └── /{id}/feedback       POST — like/dislike/worn/saved
+│   └── /{id}/canvas         PUT — save/update manual layout (6.13)
+│   └── /shuffle             POST — Dress Me quick shuffle (6.14): pinned
+│                               item ids in, one re-rolled outfit out
 ├── /wear-logs              POST log, GET history
 ├── /analytics              GET most-worn, least-worn, cost-per-wear,
 │                               capsule-suggestions, missing-essentials,
-│                               duplicates, seasonal-rotation
+│                               duplicates, seasonal-rotation,
+│                               wardrobe-usage, composition (6.15)
 ├── /stylist/chat           POST (streamed SSE) + conversation history
 ├── /packing-lists          CRUD + generate
 ├── /shopping               GET recommendations, POST dismiss/purchased
