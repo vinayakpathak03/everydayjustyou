@@ -2,10 +2,18 @@ from functools import lru_cache
 from typing import Protocol
 
 from google import genai
+from google.genai import types
 
 from app.core.config import get_settings
 
-TEXT_EMBEDDING_MODEL = "text-embedding-004"  # 768-dim — matches garment_embeddings.embedding
+# `text-embedding-004` (the model this was originally written against) has been
+# retired — confirmed via a live API call returning 404 while wiring up a real
+# project. `gemini-embedding-001` is the current stable replacement; its default
+# output is 3072-dim, so `output_dimensionality=768` is required to match the
+# `garment_embeddings.embedding` column (verified live: with that param it
+# returns exactly 768 values).
+TEXT_EMBEDDING_MODEL = "gemini-embedding-001"
+TEXT_EMBEDDING_DIMENSIONS = 768
 
 
 class EmbeddingStore(Protocol):
@@ -35,7 +43,10 @@ class GeminiEmbeddingStore:
         response = await self._client.aio.models.embed_content(
             model=TEXT_EMBEDDING_MODEL,
             contents=text,
+            config=types.EmbedContentConfig(output_dimensionality=TEXT_EMBEDDING_DIMENSIONS),
         )
+        if not response.embeddings or response.embeddings[0].values is None:
+            raise RuntimeError("Gemini returned no embedding")
         return response.embeddings[0].values
 
 

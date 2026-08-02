@@ -1,13 +1,12 @@
 """The tool-use loop itself — see docs/architecture/system-architecture.md §5.3.
 
-Caveat worth being upfront about: the exact multi-turn function-calling
-mechanics here (how a model's function_call turn and the subsequent function
-response turn get threaded back into `contents`) follow the documented Gemini
-API pattern, but this hasn't been exercised against a live API key in this
-environment — there's no way to fully verify the wire format without one. The
-loop is wrapped defensively (bounded iterations, broad exception handling with
-a graceful fallback reply) specifically because of that uncertainty: a mistake
-here should degrade to an apologetic chat message, not a 500.
+The multi-turn function-calling mechanics here (threading a model's
+function_call turn and the subsequent function-response turn back into
+`contents`) were verified against a live API key and a real tool call — see
+the commit history for the standalone reproduction. Still kept defensive
+(bounded iterations, broad exception handling with a graceful fallback reply)
+since a DB-backed tool or a future SDK upgrade can still fail in ways that
+shouldn't surface as a raw 500 mid-conversation.
 """
 
 import logging
@@ -26,7 +25,9 @@ from app.services.stylist_tools import STYLIST_TOOL, ToolContext, execute_tool
 
 logger = logging.getLogger("app.services.stylist")
 
-CHAT_MODEL = "gemini-2.0-flash"
+# "-latest" alias, not a version-pinned id — see integrations/vision.py's
+# ATTRIBUTE_MODEL comment for why.
+CHAT_MODEL = "gemini-flash-latest"
 MAX_TOOL_ITERATIONS = 4
 HISTORY_LIMIT = 20
 
@@ -84,13 +85,23 @@ async def run_chat_turn(
         for _ in range(MAX_TOOL_ITERATIONS):
             response = await client.aio.models.generate_content(
                 model=CHAT_MODEL,
-                contents=contents,
+                # list[Content] is explicitly accepted per this method's own signature
+                # (needed here: a growing multi-turn history, not a single turn), but
+                # mypy's overload resolution can't match it through the nested Union —
+                # verified correct at runtime, see this module's docstring.
+                contents=contents,  # type: ignore[arg-type]
                 config=types.GenerateContentConfig(
                     system_instruction=STYLIST_SYSTEM_PROMPT,
                     tools=[STYLIST_TOOL],
                 ),
             )
+            if not response.candidates:
+                result.text = "Didn't get a response back — try asking again?"
+                return result
             candidate = response.candidates[0]
+            if candidate.content is None:
+                result.text = "Didn't get a response back — try asking again?"
+                return result
             parts = candidate.content.parts or []
             function_calls = [p.function_call for p in parts if p.function_call is not None]
 
@@ -101,6 +112,8 @@ async def run_chat_turn(
             contents.append(candidate.content)
             response_parts = []
             for fc in function_calls:
+                if fc.name is None:
+                    continue  # malformed function_call part — skip rather than crash the turn
                 args = dict(fc.args) if fc.args else {}
                 tool_result = await execute_tool(fc.name, args, ctx)
                 result.tool_call_log.append({"name": fc.name, "args": args})

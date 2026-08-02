@@ -32,7 +32,10 @@ class StorageClient:
 
     def signed_url(self, path: str, expires_in: int = 3600) -> str:
         result = self._client.storage.from_(self._bucket).create_signed_url(path, expires_in)
-        return result["signedURL"]
+        url = result.get("signedURL")
+        if not url:
+            raise RuntimeError(f"Supabase Storage returned no signed URL for {path}")
+        return url
 
 
 @lru_cache

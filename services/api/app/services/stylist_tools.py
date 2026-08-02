@@ -30,14 +30,14 @@ STYLIST_TOOL = types.Tool(
                 "an item exists without calling this."
             ),
             parameters=types.Schema(
-                type="OBJECT",
+                type=types.Type.OBJECT,
                 properties={
                     "category": types.Schema(
-                        type="STRING",
+                        type=types.Type.STRING,
                         description="top|bottom|dress|outerwear|shoes|bag|accessory|jewelry",
                     ),
-                    "primary_color": types.Schema(type="STRING"),
-                    "occasion": types.Schema(type="STRING"),
+                    "primary_color": types.Schema(type=types.Type.STRING),
+                    "occasion": types.Schema(type=types.Type.STRING),
                 },
             ),
         ),
@@ -45,11 +45,11 @@ STYLIST_TOOL = types.Tool(
             name="generate_outfit",
             description="Generate scored outfit suggestions from the user's real wardrobe.",
             parameters=types.Schema(
-                type="OBJECT",
+                type=types.Type.OBJECT,
                 properties={
-                    "occasion": types.Schema(type="STRING"),
-                    "season": types.Schema(type="STRING"),
-                    "count": types.Schema(type="INTEGER"),
+                    "occasion": types.Schema(type=types.Type.STRING),
+                    "season": types.Schema(type=types.Type.STRING),
+                    "count": types.Schema(type=types.Type.INTEGER),
                 },
             ),
         ),
@@ -57,10 +57,12 @@ STYLIST_TOOL = types.Tool(
             name="log_wear",
             description="Record that the user is wearing specific garments or an outfit today.",
             parameters=types.Schema(
-                type="OBJECT",
+                type=types.Type.OBJECT,
                 properties={
-                    "garment_ids": types.Schema(type="ARRAY", items=types.Schema(type="STRING")),
-                    "outfit_id": types.Schema(type="STRING"),
+                    "garment_ids": types.Schema(
+                        type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING)
+                    ),
+                    "outfit_id": types.Schema(type=types.Type.STRING),
                 },
             ),
         ),
@@ -68,13 +70,14 @@ STYLIST_TOOL = types.Tool(
             name="get_wear_history",
             description="Look up recent wear history, optionally for one specific garment.",
             parameters=types.Schema(
-                type="OBJECT", properties={"garment_id": types.Schema(type="STRING")}
+                type=types.Type.OBJECT,
+                properties={"garment_id": types.Schema(type=types.Type.STRING)},
             ),
         ),
         types.FunctionDeclaration(
             name="get_weather",
             description="Get the user's current local weather, if their location is known.",
-            parameters=types.Schema(type="OBJECT", properties={}),
+            parameters=types.Schema(type=types.Type.OBJECT, properties={}),
         ),
     ]
 )

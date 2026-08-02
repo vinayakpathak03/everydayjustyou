@@ -6,11 +6,9 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 
-# A stronger reasoning tier than the bulk-tagging model is acceptable here — this
-# is interactive, not batch, and volume is bounded by count (a handful of calls
-# per generate request). See docs/tech-stack-justification.md "Design for
-# free-tier rate limits explicitly."
-RERANK_MODEL = "gemini-2.0-flash"
+# "-latest" alias, not a version-pinned id — see vision.py's ATTRIBUTE_MODEL
+# comment for why. Interactive, not batch, so no need for a cheaper tier here.
+RERANK_MODEL = "gemini-flash-latest"
 
 RERANK_PROMPT = """You are a personal stylist reasoning over outfit combinations
 that already exist in someone's real closet. You are given a numbered list of
@@ -60,15 +58,20 @@ class OutfitReranker:
         )
         response = await self._client.aio.models.generate_content(
             model=RERANK_MODEL,
-            contents=[
-                RERANK_PROMPT.format(count=count),
-                f"\n\nCandidates:\n\n{descriptions}",
-            ],
+            contents=types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=RERANK_PROMPT.format(count=count)),
+                    types.Part.from_text(text=f"\n\nCandidates:\n\n{descriptions}"),
+                ],
+            ),
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=RerankResult,
             ),
         )
+        if not response.text:
+            raise RuntimeError("Gemini returned no text for outfit reranking")
         return RerankResult.model_validate_json(response.text)
 
 

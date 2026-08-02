@@ -7,9 +7,12 @@ from pydantic import BaseModel
 
 from app.core.config import get_settings
 
-# Cheapest/fastest Gemini tier for bulk background tagging — see
+# The "-latest" flash alias rather than a version-pinned model id: confirmed
+# live that "gemini-2.0-flash" still resolves but Google has moved several
+# generations ahead (up to 3.6 as of this writing) — pinning would mean this
+# needs a manual bump periodically for no benefit on a personal project. See
 # docs/tech-stack-justification.md "Design for free-tier rate limits explicitly."
-ATTRIBUTE_MODEL = "gemini-2.0-flash"
+ATTRIBUTE_MODEL = "gemini-flash-latest"
 
 ATTRIBUTE_EXTRACTION_PROMPT = """You are cataloguing a single clothing item from a
 photo for a digital wardrobe app. Extract structured attributes as JSON matching
@@ -52,15 +55,22 @@ class GeminiAttributeExtractor:
     async def extract(self, image_bytes: bytes, mime_type: str) -> AttributeExtraction:
         response = await self._client.aio.models.generate_content(
             model=ATTRIBUTE_MODEL,
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                ATTRIBUTE_EXTRACTION_PROMPT,
-            ],
+            contents=types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    types.Part.from_text(text=ATTRIBUTE_EXTRACTION_PROMPT),
+                ],
+            ),
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=AttributeExtraction,
             ),
         )
+        if not response.text:
+            # e.g. the response was safety-blocked — surfaces as a job failure
+            # (garment stays in `needs_review`) rather than a confusing crash.
+            raise RuntimeError("Gemini returned no text for attribute extraction")
         return AttributeExtraction.model_validate_json(response.text)
 
 
