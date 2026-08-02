@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     database_url_admin: str
 
     supabase_url: str
-    supabase_jwt_secret: str
     supabase_service_role_key: str = ""
 
     admin_emails: str = ""

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from functools import lru_cache
 
 import jwt
 from fastapi import Depends, Header, HTTPException, status
+from jwt import PyJWKClient
 
 from app.core.config import get_settings
 
@@ -13,13 +15,27 @@ class CurrentUser:
     role: str
 
 
-def _decode_supabase_jwt(token: str) -> dict:
+@lru_cache
+def _jwks_client() -> PyJWKClient:
+    """Supabase projects now sign JWTs with rotatable asymmetric keys (ECC
+    P-256 / ES256) rather than a single static HS256 shared secret — the
+    shared-secret model is being phased out project-by-project (this project's
+    dashboard shows it demoted to a "previous key", kept only to verify
+    already-issued tokens). PyJWKClient fetches and caches Supabase's public
+    signing keys from its JWKS endpoint and picks the right one by the
+    token's `kid` header, so key rotation (e.g. a Supabase "standby key"
+    promotion) is handled automatically — no app-level secret to update."""
     settings = get_settings()
+    return PyJWKClient(f"{settings.supabase_url}/auth/v1/.well-known/jwks.json")
+
+
+def _decode_supabase_jwt(token: str) -> dict:
     try:
+        signing_key = _jwks_client().get_signing_key_from_jwt(token)
         return jwt.decode(
             token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
+            signing_key.key,
+            algorithms=["ES256"],
             audience="authenticated",
         )
     except jwt.PyJWTError as exc:
