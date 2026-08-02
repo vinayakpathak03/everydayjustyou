@@ -157,6 +157,59 @@ async def list_garments(
     return garments
 
 
+@router.get("/events")
+async def garment_events(
+    current: CurrentUser = Depends(get_current_user),
+) -> StreamingResponse:
+    """SSE stream of status transitions for the current user's in-flight uploads —
+    avoids client polling loops (docs/architecture/api-architecture.md §5). Simple
+    poll-the-DB implementation, not a pub/sub system, consistent with the no-Redis
+    constraint (system-architecture.md §5.6).
+
+    Deliberately does NOT use the ordinary `Depends(get_user_db)` session: FastAPI
+    closes a dependency-injected session as soon as the route *function* returns,
+    which happens immediately after handing back this generator — long before the
+    generator itself finishes streaming. Opening the RLS-scoped session directly
+    inside the generator keeps it alive for the stream's actual lifetime instead.
+
+    Must be declared before the `/{garment_id}` routes below — FastAPI matches
+    routes in registration order, so a literal path like this one has to come
+    before a parameterized path that would otherwise swallow it (a request to
+    /events would match {garment_id}="events" first and 422 trying to parse
+    that as a UUID; live-verified this exact failure on the deployed backend).
+    """
+
+    async def event_stream():
+        seen: dict[UUID, str] = {}
+        elapsed = 0.0
+        timeout_seconds = 120.0
+        async for db in get_rls_scoped_db(current):
+            while elapsed < timeout_seconds:
+                rows = list(
+                    (
+                        await db.execute(
+                            select(GarmentImage.id, GarmentImage.garment_id, GarmentImage.status)
+                            .join(Garment, Garment.id == GarmentImage.garment_id)
+                            .where(Garment.user_id == current.id)
+                            .where(GarmentImage.status != "ready")
+                        )
+                    ).all()
+                )
+                for image_id, garment_id, status in rows:
+                    if seen.get(image_id) != status:
+                        seen[image_id] = status
+                        payload = {
+                            "image_id": str(image_id),
+                            "garment_id": str(garment_id),
+                            "status": status,
+                        }
+                        yield f"event: status\ndata: {json.dumps(payload)}\n\n"
+                await asyncio.sleep(1.5)
+                elapsed += 1.5
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @router.get("/{garment_id}", response_model=GarmentOut)
 async def get_garment(
     garment_id: UUID,
@@ -199,50 +252,3 @@ async def update_garment(
     await db.refresh(garment)
     garment.images = []
     return garment
-
-
-@router.get("/events")
-async def garment_events(
-    current: CurrentUser = Depends(get_current_user),
-) -> StreamingResponse:
-    """SSE stream of status transitions for the current user's in-flight uploads —
-    avoids client polling loops (docs/architecture/api-architecture.md §5). Simple
-    poll-the-DB implementation, not a pub/sub system, consistent with the no-Redis
-    constraint (system-architecture.md §5.6).
-
-    Deliberately does NOT use the ordinary `Depends(get_user_db)` session: FastAPI
-    closes a dependency-injected session as soon as the route *function* returns,
-    which happens immediately after handing back this generator — long before the
-    generator itself finishes streaming. Opening the RLS-scoped session directly
-    inside the generator keeps it alive for the stream's actual lifetime instead.
-    """
-
-    async def event_stream():
-        seen: dict[UUID, str] = {}
-        elapsed = 0.0
-        timeout_seconds = 120.0
-        async for db in get_rls_scoped_db(current):
-            while elapsed < timeout_seconds:
-                rows = list(
-                    (
-                        await db.execute(
-                            select(GarmentImage.id, GarmentImage.garment_id, GarmentImage.status)
-                            .join(Garment, Garment.id == GarmentImage.garment_id)
-                            .where(Garment.user_id == current.id)
-                            .where(GarmentImage.status != "ready")
-                        )
-                    ).all()
-                )
-                for image_id, garment_id, status in rows:
-                    if seen.get(image_id) != status:
-                        seen[image_id] = status
-                        payload = {
-                            "image_id": str(image_id),
-                            "garment_id": str(garment_id),
-                            "status": status,
-                        }
-                        yield f"event: status\ndata: {json.dumps(payload)}\n\n"
-                await asyncio.sleep(1.5)
-                elapsed += 1.5
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
