@@ -1,11 +1,22 @@
 from functools import lru_cache
-from typing import Protocol
+from typing import Literal, Protocol
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
 from app.core.config import get_settings
+
+# Mirrors apps/web/lib/categories.ts's STANDARD_CATEGORIES exactly. Left as a
+# free `str` before, Gemini would naturally return "Tops"/"Bottoms" (plural,
+# capitalized) rather than this exact lowercase-singular set — which silently
+# broke every exact-match consumer downstream (wardrobe category filter,
+# outfit-slot assignment) since nothing there does case/pluralization-
+# insensitive matching. A Literal type constrains structured output to
+# exactly one of these values instead of leaving it to the model's judgment.
+Category = Literal[
+    "top", "bottom", "dress", "outerwear", "shoes", "bag", "accessory", "jewelry"
+]
 
 # The "-latest" flash alias rather than a version-pinned model id: confirmed
 # live that "gemini-2.0-flash" still resolves but Google has moved several
@@ -24,7 +35,7 @@ fabric_confidence: "low" rather than guessing confidently."""
 class AttributeExtraction(BaseModel):
     """Mirrors the JSON contract in docs/architecture/system-architecture.md §5.1."""
 
-    category: str
+    category: Category
     subcategory: str | None = None
     primary_color: str
     secondary_colors: list[str] = []
