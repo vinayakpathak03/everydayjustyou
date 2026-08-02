@@ -2,6 +2,7 @@ import io
 from functools import lru_cache
 from typing import Protocol
 
+import onnxruntime as ort
 from PIL import Image, ImageOps
 from rembg import new_session, remove
 
@@ -23,7 +24,19 @@ def _session():
     # smaller/faster model given Render/Railway free-tier RAM constraints (see
     # docs/tech-stack-justification.md). Slightly lower edge-quality than u2net,
     # judged an acceptable trade for staying comfortably inside free-tier memory.
-    return new_session("u2netp")
+    #
+    # ONNX Runtime's defaults are tuned for throughput, not memory: the CPU
+    # memory arena pre-reserves larger chunks for reuse across calls (good on
+    # a real server, wasteful for occasional single-image jobs), and thread
+    # count defaults to however many CPUs the container *reports*, which can
+    # exceed what a fractional-CPU free-tier instance actually has. Both
+    # inflate peak RSS well past what one small model genuinely needs — tuned
+    # down here after live OOM crashes on Render's 512MB free tier.
+    sess_opts = ort.SessionOptions()
+    sess_opts.enable_cpu_mem_arena = False
+    sess_opts.intra_op_num_threads = 1
+    sess_opts.inter_op_num_threads = 1
+    return new_session("u2netp", sess_opts=sess_opts)
 
 
 class RembgBackgroundRemover:
