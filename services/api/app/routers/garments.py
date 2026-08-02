@@ -4,15 +4,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_user_db
 from app.core.security import CurrentUser, get_current_user
 from app.db.session import get_db as get_rls_scoped_db
 from app.integrations.storage import get_storage_client
-from app.models.garment import SENSITIVE_CATEGORIES, Garment, GarmentImage
+from app.models.garment import SENSITIVE_CATEGORIES, Garment, GarmentEmbedding, GarmentImage
+from app.models.outfit import OutfitItem
 from app.models.processing_job import ProcessingJob
+from app.models.wear_log import WearLog
 from app.schemas.garment import (
     GarmentImageUploadOut,
     GarmentManualCreate,
@@ -275,3 +277,49 @@ async def update_garment(
     await db.refresh(garment)
     garment.images = []
     return garment
+
+
+@router.delete("/{garment_id}", status_code=204)
+async def delete_garment(
+    garment_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_user_db),
+) -> None:
+    """Hard delete, not archive — the archive toggle already exists via
+    PATCH is_archived for the 'keep the record, hide it' case; this is for
+    genuinely removing something (wrong upload, duplicate, doesn't exist
+    anymore). Cleans up the child rows other tables' non-nullable FKs to
+    garments would otherwise reject: outfit_items (dropped — just leaves
+    that historical outfit one item short) and wear_logs.garment_id (nulled
+    out, not deleted — the wear-count history itself is still meaningful
+    even once the garment referenced by it is gone).
+    """
+    garment = (
+        await db.execute(select(Garment).where(Garment.id == garment_id))
+    ).scalar_one_or_none()
+    if garment is None:
+        raise HTTPException(status_code=404, detail={"type": "not_found", "status": 404})
+
+    images = list(
+        (
+            await db.execute(
+                select(GarmentImage).where(GarmentImage.garment_id == garment_id)
+            )
+        ).scalars()
+    )
+    paths = [img.storage_url for img in images]
+
+    await db.execute(delete(OutfitItem).where(OutfitItem.garment_id == garment_id))
+    await db.execute(
+        update(WearLog).where(WearLog.garment_id == garment_id).values(garment_id=None)
+    )
+    await db.execute(delete(GarmentEmbedding).where(GarmentEmbedding.garment_id == garment_id))
+    await db.execute(delete(GarmentImage).where(GarmentImage.garment_id == garment_id))
+    await db.execute(delete(Garment).where(Garment.id == garment_id))
+    await db.commit()
+
+    if paths:
+        try:
+            await asyncio.to_thread(get_storage_client().remove, paths)
+        except Exception:  # noqa: BLE001 — DB delete already committed; a storage
+            pass  # cleanup failure shouldn't surface as a failed delete to the user

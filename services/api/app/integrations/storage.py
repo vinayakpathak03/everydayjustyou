@@ -30,6 +30,10 @@ class StorageClient:
     def download(self, path: str) -> bytes:
         return self._client.storage.from_(self._bucket).download(path)
 
+    def remove(self, paths: list[str]) -> None:
+        if paths:
+            self._client.storage.from_(self._bucket).remove(paths)
+
     def signed_url(self, path: str, expires_in: int = 3600) -> str:
         result = self._client.storage.from_(self._bucket).create_signed_url(path, expires_in)
         url = result.get("signedURL")

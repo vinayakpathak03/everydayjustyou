@@ -45,6 +45,13 @@ export default function GarmentDetailPage() {
     setGarment({ ...garment, is_favorite: updated.is_favorite });
   }
 
+  async function deleteGarment() {
+    if (!garment) return;
+    if (!window.confirm("Delete this item? This can't be undone.")) return;
+    await apiFetch<void>(`/garments/${garment.id}`, { method: "DELETE" });
+    router.push("/wardrobe");
+  }
+
   if (!garment) {
     return <main className="p-6 text-sm text-ink-soft">Loading...</main>;
   }
@@ -52,9 +59,14 @@ export default function GarmentDetailPage() {
   if (garment.entry_mode === "manual") {
     return (
       <main className="flex flex-col gap-4 px-6 pt-8">
-        <p className="font-mono text-xs uppercase tracking-wide text-ink-faint capitalize">
-          {garment.category}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="font-mono text-xs uppercase tracking-wide text-ink-faint capitalize">
+            {garment.category}
+          </p>
+          <Button variant="secondary" onClick={deleteGarment}>
+            Delete
+          </Button>
+        </div>
         <h1 className="font-display text-2xl">{garment.manual_description}</h1>
         {garment.manual_quantity && (
           <p className="text-sm text-ink-soft">Quantity: {garment.manual_quantity}</p>
@@ -82,9 +94,14 @@ export default function GarmentDetailPage() {
           {garment.category}
           {garment.subcategory ? ` · ${garment.subcategory}` : ""}
         </p>
-        <Button variant="secondary" onClick={toggleFavorite}>
-          {garment.is_favorite ? "★ Favorited" : "☆ Favorite"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={toggleFavorite}>
+            {garment.is_favorite ? "★ Favorited" : "☆ Favorite"}
+          </Button>
+          <Button variant="secondary" onClick={deleteGarment}>
+            Delete
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
