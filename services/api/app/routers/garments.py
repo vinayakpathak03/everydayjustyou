@@ -126,7 +126,7 @@ async def list_garments(
     limit: int = Query(default=50, le=100),
     current: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_user_db),
-) -> list[Garment]:
+) -> list[GarmentOut]:
     stmt = select(Garment).order_by(Garment.created_at.desc()).limit(limit)
     if category:
         stmt = stmt.where(Garment.category == category)
@@ -154,7 +154,20 @@ async def list_garments(
 
     for g in garments:
         g.images = images_by_garment[g.id][:1]  # thumbnail only — full set is on the detail screen
-    return garments
+
+    # The bucket is private (deliberately — see storage.py), so the raw
+    # storage_url path isn't loadable by a browser; every image needs a
+    # signed URL before it leaves the API. Built on Pydantic copies, not the
+    # ORM rows themselves, so there's no risk of a signed URL ever getting
+    # flushed back into the real storage_url column.
+    storage_client = get_storage_client()
+    paths = [img.storage_url for g in garments for img in g.images]
+    signed = await asyncio.to_thread(storage_client.signed_urls, paths)
+    results = [GarmentOut.model_validate(g) for g in garments]
+    for result in results:
+        for img in result.images:
+            img.storage_url = signed.get(img.storage_url, img.storage_url)
+    return results
 
 
 @router.get("/events")
@@ -215,7 +228,7 @@ async def get_garment(
     garment_id: UUID,
     current: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_user_db),
-) -> Garment:
+) -> GarmentOut:
     garment = (
         await db.execute(select(Garment).where(Garment.id == garment_id))
     ).scalar_one_or_none()
@@ -231,7 +244,17 @@ async def get_garment(
         ).scalars()
     )
     garment.images = images
-    return garment
+
+    # See list_garments' matching comment — bucket is private, so raw
+    # storage_url paths need signing before they leave the API.
+    storage_client = get_storage_client()
+    signed = await asyncio.to_thread(
+        storage_client.signed_urls, [img.storage_url for img in images]
+    )
+    result = GarmentOut.model_validate(garment)
+    for img in result.images:
+        img.storage_url = signed.get(img.storage_url, img.storage_url)
+    return result
 
 
 @router.patch("/{garment_id}", response_model=GarmentOut)

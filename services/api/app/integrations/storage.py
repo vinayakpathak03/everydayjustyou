@@ -37,6 +37,18 @@ class StorageClient:
             raise RuntimeError(f"Supabase Storage returned no signed URL for {path}")
         return url
 
+    def signed_urls(self, paths: list[str], expires_in: int = 3600) -> dict[str, str]:
+        """Batch variant — the bucket is private (see class docstring), so every
+        path the API hands to a client has to go through this first. One request
+        for N paths rather than N requests, since garment lists/outfits routinely
+        need a handful of these at once."""
+        if not paths:
+            return {}
+        results = self._client.storage.from_(self._bucket).create_signed_urls(paths, expires_in)
+        return {
+            r["path"]: r["signedURL"] for r in results if r.get("path") and r.get("signedURL")
+        }
+
 
 @lru_cache
 def get_storage_client() -> StorageClient:

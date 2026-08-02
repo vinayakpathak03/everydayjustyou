@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.security import CurrentUser, get_current_user
 from app.db.session import get_db as get_rls_scoped_db
+from app.integrations.storage import get_storage_client
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.garment import GarmentImage
 from app.models.outfit import Outfit, OutfitItem
@@ -66,8 +67,12 @@ async def _outfit_card_payload(db: AsyncSession, outfit_id: uuid.UUID) -> dict |
                 )
             ).all()
         )
+        paths: dict[uuid.UUID, str] = {}
         for gid, url in image_rows:
-            images.setdefault(gid, url)
+            paths.setdefault(gid, url)
+        # Bucket is private (see storage.py) — sign before this leaves the API.
+        signed = await asyncio.to_thread(get_storage_client().signed_urls, list(paths.values()))
+        images = {gid: signed.get(path, path) for gid, path in paths.items()}
     return {
         "id": str(outfit.id),
         "score": outfit.score,

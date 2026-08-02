@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_user_db
 from app.core.security import CurrentUser, get_current_user
 from app.integrations.chat import get_outfit_reranker
+from app.integrations.storage import get_storage_client
 from app.models.garment import Garment, GarmentImage
 from app.models.outfit import Outfit, OutfitItem
 from app.schemas.outfit import GenerateOutfitRequest, OutfitItemOut, OutfitOut
@@ -17,6 +19,8 @@ router = APIRouter(prefix="/outfits", tags=["outfits"])
 
 
 async def _primary_image_map(db: AsyncSession, garment_ids: list[UUID]) -> dict[UUID, str]:
+    """Returns signed URLs, not raw storage paths — the bucket is private
+    (see storage.py), so a raw path isn't loadable by a browser."""
     if not garment_ids:
         return {}
     rows = list(
@@ -28,11 +32,12 @@ async def _primary_image_map(db: AsyncSession, garment_ids: list[UUID]) -> dict[
             )
         ).all()
     )
-    result: dict[UUID, str] = {}
+    paths: dict[UUID, str] = {}
     for garment_id, storage_url in rows:
         # first row per garment_id wins — ordered so primary/lowest-sort_order comes first
-        result.setdefault(garment_id, storage_url)
-    return result
+        paths.setdefault(garment_id, storage_url)
+    signed = await asyncio.to_thread(get_storage_client().signed_urls, list(paths.values()))
+    return {gid: signed.get(path, path) for gid, path in paths.items()}
 
 
 @router.post("/generate", response_model=list[OutfitOut])
