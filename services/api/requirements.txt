@@ -13,8 +13,9 @@ httpx==0.28.1
 python-multipart==0.0.9
 
 # AI / ingestion pipeline (Phase 1) — see docs/tech-stack-justification.md
-rembg==2.0.65
-onnxruntime==1.19.2
+# rembg/onnxruntime removed: reliably OOM-killed Render's free-tier 512MB
+# instance even after downscaling input images and tuning ONNX Runtime's
+# memory settings down as far as they go — see background_removal.py.
 Pillow==10.4.0
 google-genai==2.16.0
 supabase==2.31.0
