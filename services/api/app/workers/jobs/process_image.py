@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.background_removal import BackgroundRemover
-from app.integrations.embeddings import EmbeddingStore
+from app.integrations.embeddings import TEXT_EMBEDDING_MODEL, EmbeddingStore
 from app.integrations.storage import StorageClient
 from app.integrations.vision import AttributeExtractor
 from app.models.garment import Garment, GarmentEmbedding, GarmentImage
@@ -75,7 +75,7 @@ async def run(
             garment_id=garment.id,
             kind="text_description",
             embedding=embedding_vector,
-            model="text-embedding-004",
+            model=TEXT_EMBEDDING_MODEL,
         )
     )
     await db.flush()

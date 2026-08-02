@@ -2,8 +2,15 @@ import io
 from functools import lru_cache
 from typing import Protocol
 
-from PIL import Image
+from PIL import Image, ImageOps
 from rembg import new_session, remove
+
+# Phone photos routinely come in at 3000-4000px+ per side (10+ megapixels).
+# Feeding that straight into rembg means decoding, tensor ops, and full-res
+# alpha compositing all scale with input size — on Render's free-tier 512MB
+# instance that's enough on its own to OOM-kill the process. Clothing detail
+# doesn't need more than this for tagging/display purposes.
+MAX_DIMENSION = 1280
 
 
 class BackgroundRemover(Protocol):
@@ -26,7 +33,15 @@ class RembgBackgroundRemover:
     this off the event loop via asyncio.to_thread."""
 
     def remove(self, image_bytes: bytes) -> bytes:
-        output = remove(image_bytes, session=_session())
+        source = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes)))
+        if source is None:
+            source = Image.open(io.BytesIO(image_bytes))
+        if max(source.size) > MAX_DIMENSION:
+            source.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
+        downscaled = io.BytesIO()
+        source.convert("RGB").save(downscaled, format="JPEG", quality=90)
+
+        output = remove(downscaled.getvalue(), session=_session())
         # `remove()` already returns PNG bytes with an alpha channel, but we
         # round-trip through Pillow to normalize mode/format defensively (some
         # inputs — e.g. CMYK JPEGs — otherwise produce a subtly malformed PNG).
